@@ -1,17 +1,22 @@
 import Constants, { ExecutionEnvironment } from "expo-constants";
+import { useRouter } from "expo-router";
 import { StyleSheet, View } from "react-native";
 
+import { PageContainer } from "@/src/components/layout/PageContainer";
+import { Screen } from "@/src/components/layout/Screen";
+import { Stack } from "@/src/components/layout/Stack";
+import { Button } from "@/src/components/ui/Button";
+import { Heading } from "@/src/components/ui/Heading";
 import { Text } from "@/src/components/ui/Text";
-import { SignInScreen } from "@/src/features/authentication/screens/SignInScreen";
 import { colors, spacing } from "@/src/theme";
 
 // Clerk's prebuilt auth UI for NATIVE targets (web builds resolve the
-// .web.tsx variant instead). The native <AuthView/> is rendered by the
-// clerk-ios / clerk-android SDKs, which only exist in a development build
-// (npx expo prebuild && npx expo run:ios|android) — Expo Go does not contain
-// them, so there we fall back to the bank's custom OTP flow, which works
-// everywhere. Completion in either UI flips Clerk's auth state and
-// ClerkSessionBridge + the (auth) layout guard route the customer onward.
+// .web.tsx variant, which renders Clerk's <SignIn/> card). The native
+// <AuthView/> is rendered by the clerk-ios / clerk-android SDKs, which only
+// exist in a development build (npx expo prebuild && npx expo run:ios|android)
+// — Expo Go does not contain them, so there we show guidance instead.
+// Completion flips Clerk's auth state; ClerkSessionBridge and the (auth)
+// layout guard route the customer onward.
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
@@ -25,28 +30,47 @@ function DevBuildAuthView() {
     return (
       <View style={styles.container}>
         {/* Required full-screen auth per the AuthView reference: no native
-            dismiss button — the customer must authenticate to continue.
-            Completion is observed by ClerkSessionBridge, and the (auth)
-            layout guard routes onward. */}
+            dismiss button — the customer must authenticate to continue. */}
         <AuthView isDismissible={false} />
       </View>
     );
   } catch {
-    return (
-      <View style={styles.notice}>
-        <Text variant="body" color={colors.textSecondary} style={styles.noticeText}>
-          Clerk&apos;s native sign-in UI isn&apos;t available in this build. Rebuild with
-          `npx expo run:ios` or `npx expo run:android`.
-        </Text>
-      </View>
-    );
+    return <ExpoGoNotice />;
   }
+}
+
+function ExpoGoNotice() {
+  const router = useRouter();
+
+  return (
+    <Screen>
+      <PageContainer>
+        <Stack gap="lg" style={styles.notice}>
+          <Stack gap="sm">
+            <Text variant="caption" color={colors.brandSecondaryStrong} style={styles.brand}>
+              IDBI WEALTH ADVISORY
+            </Text>
+            <Heading level="pageTitle">Sign-in isn&apos;t available in Expo Go</Heading>
+            <Text variant="body" color={colors.textSecondary}>
+              This app uses Clerk&apos;s native sign-in, which needs a development build. Run
+              `npx expo run:ios` or `npx expo run:android` — or open the app in a web browser —
+              to sign in.
+            </Text>
+          </Stack>
+          <Button
+            label="Back to welcome"
+            variant="secondary"
+            onPress={() => router.replace("/(public)/welcome")}
+          />
+        </Stack>
+      </PageContainer>
+    </Screen>
+  );
 }
 
 export function ClerkPrebuiltAuthScreen() {
   if (isExpoGo) {
-    // Expo Go cannot load Clerk's native UI module — use the custom flow.
-    return <SignInScreen />;
+    return <ExpoGoNotice />;
   }
   return <DevBuildAuthView />;
 }
@@ -58,11 +82,11 @@ const styles = StyleSheet.create({
   },
   notice: {
     flex: 1,
-    alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
+    paddingVertical: spacing.xxl,
   },
-  noticeText: {
-    textAlign: "center",
+  brand: {
+    fontWeight: "700",
+    letterSpacing: 1,
   },
 });
