@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import { KeyboardScreen } from "@/src/components/layout/KeyboardScreen";
 import { PageContainer } from "@/src/components/layout/PageContainer";
@@ -79,6 +79,10 @@ export function SignInScreen() {
           </Stack>
 
           <SecureAccessBanner />
+
+          {/* Clerk smart-CAPTCHA mount point (web only; inert elsewhere and
+              in mock mode). Required for the dev sign-up fallback. */}
+          <View nativeID="clerk-captcha" />
         </Stack>
       </PageContainer>
     </KeyboardScreen>
