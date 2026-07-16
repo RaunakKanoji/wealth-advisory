@@ -32,7 +32,12 @@
         }
       ],
       "expo-secure-store",
-      "@clerk/expo"
+      [
+        "@clerk/expo",
+        {
+          "theme": "./clerk-theme.json"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

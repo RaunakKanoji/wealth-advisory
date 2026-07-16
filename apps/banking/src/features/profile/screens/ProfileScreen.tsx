@@ -13,6 +13,7 @@ import { Button } from "@/src/components/ui/Button";
 import { Card } from "@/src/components/ui/Card";
 import { Icon } from "@/src/components/ui/Icon";
 import { Text } from "@/src/components/ui/Text";
+import { env } from "@/src/config/env";
 import { PROFILE_WIREFRAME } from "@/src/features/profile/wireframe/profile.fixture";
 import { useSignOut } from "@/src/features/authentication/hooks/useSignOut";
 import { colors, spacing } from "@/src/theme";
@@ -37,6 +38,12 @@ export function ProfileScreen() {
         Alert.alert("Consent & permissions", "Not available in this preview.");
         return;
       case "security":
+        // clerk mode opens Clerk's prebuilt account manager (UserProfile UI);
+        // mock mode has no account backend yet.
+        if (env.authenticationMode === "clerk") {
+          router.push("/(app)/account");
+          return;
+        }
         Alert.alert("Security", "Not available in this preview.");
         return;
       case "preferences":
