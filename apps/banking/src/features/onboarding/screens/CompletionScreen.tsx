@@ -10,7 +10,7 @@ import { Heading } from "@/src/components/ui/Heading";
 import { Icon } from "@/src/components/ui/Icon";
 import { Text } from "@/src/components/ui/Text";
 import { ONBOARDING_WIREFRAME } from "@/src/features/onboarding/wireframe/onboarding.fixture";
-import { useSession } from "@/src/providers/SessionProvider";
+import { useSession } from "@/src/features/session";
 import { colors, radius, spacing } from "@/src/theme";
 
 const data = ONBOARDING_WIREFRAME.completion;
