@@ -1,50 +1,69 @@
-# Welcome to your Expo app 👋
+# IDBI Wealth Advisory
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+IDBI Wealth Advisory is a mobile-first wealth advisory platform designed for
+bank customers. The primary application is a universal Expo application that
+supports Android, iOS, and responsive browser access from one codebase.
 
-## Get started
+## Repository structure
 
-1. Install dependencies
+- `apps/banking` — Universal Expo customer banking application (Expo Router)
+- `packages` — Shared domain and technical packages (reserved; empty at baseline)
+- `pnpm-workspace.yaml` — Workspace definition covering `apps/*` and `packages/*`
+- `pnpm-lock.yaml` — Single lock file for the whole workspace
 
-   ```bash
-   npm install
-   ```
+Inside `apps/banking`:
 
-2. Start the app
+- `app` — Expo Router route files only; routes stay thin and delegate to features
+- `src/features` — Feature implementations that own screens and business logic
+- `src/components` — Shared UI primitives and feedback states
+- `src/providers` — Application-level providers and route guards
+- `assets` — Static images and fonts
 
-   ```bash
-   npx expo start
-   ```
+## Requirements
 
-In the output, you'll find options to open the app in a
+- Node.js (see `.nvmrc` if present) with Corepack enabled
+- pnpm 10 (`packageManager` is pinned in the root `package.json`)
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Local development
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Install dependencies from the repository root:
 
 ```bash
-npm run reset-project
+pnpm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Start the Expo development server:
 
-## Learn more
+```bash
+pnpm dev
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+Then press `a` for Android, `i` for iOS, or `w` for web, or open the printed
+URL in Expo Go.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Platform shortcuts are also available from the root:
 
-## Join the community
+```bash
+pnpm android
+pnpm ios
+pnpm web
+```
 
-Join our community of developers creating universal apps.
+## Quality checks
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Run all checks from the repository root:
+
+```bash
+pnpm lint       # ESLint via expo lint
+pnpm typecheck  # Strict TypeScript, no emit
+pnpm test       # Jest via jest-expo
+pnpm check      # lint + typecheck
+```
+
+## Conventions
+
+- One universal Expo application; no per-platform forks.
+- Strict TypeScript everywhere; external data is validated at the boundary.
+- Deterministic development fixtures only — never real customer data.
+- Authoritative financial and suitability decisions live behind service or API
+  boundaries, not in the client.
