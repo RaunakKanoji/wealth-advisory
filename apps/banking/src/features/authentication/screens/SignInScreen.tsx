@@ -1,63 +1,84 @@
-import { Alert, StyleSheet } from "react-native";
+import { useRouter } from "expo-router";
+import { StyleSheet } from "react-native";
 
 import { KeyboardScreen } from "@/src/components/layout/KeyboardScreen";
 import { PageContainer } from "@/src/components/layout/PageContainer";
+import { Row } from "@/src/components/layout/Row";
 import { Stack } from "@/src/components/layout/Stack";
 import { Button } from "@/src/components/ui/Button";
 import { Heading } from "@/src/components/ui/Heading";
+import { IconButton } from "@/src/components/ui/IconButton";
 import { Text } from "@/src/components/ui/Text";
-import { TextField } from "@/src/components/ui/TextField";
-import { useSignIn } from "@/src/features/authentication/hooks/useSignIn";
+import { AuthenticationNotice } from "@/src/features/authentication/components/AuthenticationNotice";
+import { CustomerIdentifierField } from "@/src/features/authentication/components/CustomerIdentifierField";
+import { SecureAccessBanner } from "@/src/features/authentication/components/SecureAccessBanner";
+import { useRequestOtp } from "@/src/features/authentication/hooks/useRequestOtp";
+import { useSession } from "@/src/features/session";
 import { colors, spacing } from "@/src/theme";
 
-function handleSupportPress() {
-  Alert.alert("Support", "Support contact options are not yet available in this preview.");
-}
-
 export function SignInScreen() {
-  const { identifier, setIdentifier, fieldError, submitError, isSubmitting, submit } =
-    useSignIn();
+  const router = useRouter();
+  const { status } = useSession();
+  const { identifier, setIdentifier, fieldError, submitError, isRequesting, requestOtp } =
+    useRequestOtp();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(public)/welcome");
+  };
 
   return (
     <KeyboardScreen>
       <PageContainer>
         <Stack gap="xl" style={styles.content}>
+          <Row justify="space-between">
+            <IconButton icon="back" accessibilityLabel="Go back" onPress={handleBack} />
+            <Button
+              label="Support"
+              variant="ghost"
+              onPress={() => router.push("/(public)/support")}
+            />
+          </Row>
+
           <Stack gap="sm">
-            <Heading level="pageTitle">Secure sign-in</Heading>
+            <Text variant="caption" color={colors.brandSecondaryStrong} style={styles.brand}>
+              IDBI WEALTH ADVISORY
+            </Text>
+            <Heading level="pageTitle">Secure sign in</Heading>
             <Text variant="body" color={colors.textSecondary}>
-              Enter your registered mobile number or customer ID. We&apos;ll send a
-              verification code to confirm it&apos;s you.
+              Enter the mobile number registered with IDBI Bank. We will send a one-time
+              verification code.
             </Text>
           </Stack>
 
+          {status === "expired" ? (
+            <AuthenticationNotice
+              tone="info"
+              message="Your session has expired to protect your account. Please sign in again."
+            />
+          ) : null}
+
           <Stack gap="md">
-            <TextField
-              label="Mobile number or customer ID"
-              placeholder="e.g. 9876543210"
+            <CustomerIdentifierField
               value={identifier}
               onChangeText={setIdentifier}
               error={fieldError ?? undefined}
-              editable={!isSubmitting}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="go"
-              onSubmitEditing={submit}
+              disabled={isRequesting}
+              onSubmitEditing={requestOtp}
             />
-            {submitError ? (
-              <Text variant="caption" color={colors.error} accessibilityRole="alert">
-                {submitError}
-              </Text>
-            ) : null}
-            <Button label="Continue" variant="primary" loading={isSubmitting} onPress={submit} />
+            {submitError ? <AuthenticationNotice message={submitError.message} /> : null}
+            <Button
+              label="Continue"
+              variant="primary"
+              loading={isRequesting}
+              onPress={requestOtp}
+            />
           </Stack>
 
-          <Stack gap="xs">
-            <Text variant="caption" color={colors.textSecondary}>
-              Your identifier is used only to verify your identity and is never stored
-              unencrypted on this device.
-            </Text>
-            <Button label="Need help signing in?" variant="ghost" onPress={handleSupportPress} />
-          </Stack>
+          <SecureAccessBanner />
         </Stack>
       </PageContainer>
     </KeyboardScreen>
@@ -66,6 +87,10 @@ export function SignInScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingVertical: spacing.xxl,
+    paddingVertical: spacing.xl,
+  },
+  brand: {
+    fontWeight: "700",
+    letterSpacing: 1,
   },
 });

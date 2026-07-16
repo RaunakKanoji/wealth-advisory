@@ -17,6 +17,17 @@ export const APP_ENVIRONMENTS = ["development", "preview", "production"] as cons
 
 export type AppEnvironment = (typeof APP_ENVIRONMENTS)[number];
 
+export const AUTHENTICATION_MODES = ["mock", "clerk", "bank"] as const;
+
+/**
+ * Which authentication adapter backs the sign-in journey:
+ * - "mock"  — deterministic development adapter; development/preview only.
+ * - "clerk" — Clerk phone-code authentication; requires a publishable key.
+ * - "bank"  — the approved IDBI provider (not yet implemented; selecting it
+ *             fails loudly rather than silently authenticating).
+ */
+export type AuthenticationMode = (typeof AUTHENTICATION_MODES)[number];
+
 export type EnvConfig = {
   /** Which deployment mode this bundle was built for. */
   appEnv: AppEnvironment;
@@ -28,12 +39,20 @@ export type EnvConfig = {
    * in production, and never inferred implicitly.
    */
   useMockData: boolean;
+  /** Active authentication adapter. Mock is rejected outside dev/preview. */
+  authenticationMode: AuthenticationMode;
+  /** Clerk publishable key (pk_*) — public by design; required in clerk mode.
+   *  Secrets (sk_*, signing keys, OTP provider credentials) must never appear
+   *  in any EXPO_PUBLIC_* variable. */
+  clerkPublishableKey: string | null;
 };
 
 export type RawEnv = {
   EXPO_PUBLIC_APP_ENV?: string;
   EXPO_PUBLIC_API_BASE_URL?: string;
   EXPO_PUBLIC_USE_MOCK_DATA?: string;
+  EXPO_PUBLIC_AUTHENTICATION_MODE?: string;
+  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?: string;
 };
 
 /** Thrown when required configuration is missing or invalid, so a misconfigured
@@ -61,6 +80,16 @@ const rawEnvSchema = z.object({
     .url({ error: "must be a valid URL" })
     .optional(),
   EXPO_PUBLIC_USE_MOCK_DATA: booleanString.optional(),
+  EXPO_PUBLIC_AUTHENTICATION_MODE: z
+    .enum(AUTHENTICATION_MODES, {
+      error: `must be one of: ${AUTHENTICATION_MODES.join(", ")}`,
+    })
+    .optional(),
+  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: z
+    .string()
+    .trim()
+    .min(1, "must not be empty when set")
+    .optional(),
 });
 
 const DEV_DEFAULT_API_BASE_URL = "http://localhost:8080";
@@ -89,6 +118,11 @@ export function parseEnv(raw: RawEnv): EnvConfig {
   const appEnv = parsed.data.EXPO_PUBLIC_APP_ENV;
   const apiBaseUrl = parsed.data.EXPO_PUBLIC_API_BASE_URL;
   const useMockData = parsed.data.EXPO_PUBLIC_USE_MOCK_DATA ?? false;
+  // Development defaults to the deterministic mock adapter; every other
+  // environment must choose its adapter explicitly.
+  const authenticationMode =
+    parsed.data.EXPO_PUBLIC_AUTHENTICATION_MODE ?? (appEnv === "development" ? "mock" : undefined);
+  const clerkPublishableKey = parsed.data.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null;
 
   const issues: string[] = [];
 
@@ -103,6 +137,21 @@ export function parseEnv(raw: RawEnv): EnvConfig {
       "EXPO_PUBLIC_USE_MOCK_DATA: must not be set in production; mock mode is development-only",
     );
   }
+  if (authenticationMode === undefined) {
+    issues.push(
+      `EXPO_PUBLIC_AUTHENTICATION_MODE: required when EXPO_PUBLIC_APP_ENV is "${appEnv}"`,
+    );
+  }
+  if (appEnv === "production" && authenticationMode === "mock") {
+    issues.push(
+      "EXPO_PUBLIC_AUTHENTICATION_MODE: mock authentication must never run in production",
+    );
+  }
+  if (authenticationMode === "clerk" && clerkPublishableKey === null) {
+    issues.push(
+      "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: required when EXPO_PUBLIC_AUTHENTICATION_MODE is \"clerk\"",
+    );
+  }
 
   if (issues.length > 0) {
     throw new EnvConfigError(issues);
@@ -112,6 +161,9 @@ export function parseEnv(raw: RawEnv): EnvConfig {
     appEnv,
     apiBaseUrl: apiBaseUrl ?? DEV_DEFAULT_API_BASE_URL,
     useMockData,
+    // `issues` guarantees authenticationMode is defined past this point.
+    authenticationMode: authenticationMode as AuthenticationMode,
+    clerkPublishableKey,
   };
 }
 
@@ -119,6 +171,8 @@ const rawEnv: RawEnv = {
   EXPO_PUBLIC_APP_ENV: process.env.EXPO_PUBLIC_APP_ENV,
   EXPO_PUBLIC_API_BASE_URL: process.env.EXPO_PUBLIC_API_BASE_URL,
   EXPO_PUBLIC_USE_MOCK_DATA: process.env.EXPO_PUBLIC_USE_MOCK_DATA,
+  EXPO_PUBLIC_AUTHENTICATION_MODE: process.env.EXPO_PUBLIC_AUTHENTICATION_MODE,
+  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
 };
 
 /** Validated configuration for this bundle. Importing this module fails fast

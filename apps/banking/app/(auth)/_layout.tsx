@@ -1,15 +1,31 @@
 import { Redirect, Stack } from "expo-router";
 
-import { useSession } from "@/src/providers/SessionProvider";
-import { getAuthGroupRedirect } from "@/src/providers/sessionRouteGuards";
+import { LoadingState } from "@/src/components/feedback/LoadingState";
+import { Screen } from "@/src/components/layout/Screen";
+import { AuthenticationFlowProvider } from "@/src/features/authentication/state/AuthenticationFlowProvider";
+import { getAuthGroupRedirect, useSession } from "@/src/features/session";
 
 export default function AuthLayout() {
   const { status } = useSession();
-  const redirect = getAuthGroupRedirect(status);
 
+  if (status === "bootstrapping") {
+    return (
+      <Screen>
+        <LoadingState label="Loading your account" />
+      </Screen>
+    );
+  }
+
+  const redirect = getAuthGroupRedirect(status);
   if (redirect) {
     return <Redirect href={redirect} />;
   }
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  // Challenge state lives exactly as long as this group stays mounted —
+  // leaving authentication (success, cancel, redirect) discards it.
+  return (
+    <AuthenticationFlowProvider>
+      <Stack screenOptions={{ headerShown: false }} />
+    </AuthenticationFlowProvider>
+  );
 }

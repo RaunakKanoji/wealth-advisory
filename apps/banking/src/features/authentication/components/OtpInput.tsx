@@ -60,6 +60,10 @@ export function OtpInput({ length, value, onChange, error = false, disabled = fa
           keyboardType="number-pad"
           maxLength={length}
           editable={!disabled}
+          // OS OTP autofill targets the first box; the paste-friendly
+          // onChangeText above spreads the full code across all boxes.
+          textContentType={index === 0 ? "oneTimeCode" : "none"}
+          autoComplete={index === 0 ? "one-time-code" : "off"}
           accessibilityLabel={`Verification code digit ${index + 1} of ${length}`}
           style={[styles.box, error && styles.boxError, disabled && styles.boxDisabled]}
         />

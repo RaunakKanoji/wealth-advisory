@@ -1,85 +1,105 @@
-import { useLocalSearchParams } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { StyleSheet } from "react-native";
 
 import { KeyboardScreen } from "@/src/components/layout/KeyboardScreen";
 import { PageContainer } from "@/src/components/layout/PageContainer";
+import { Row } from "@/src/components/layout/Row";
 import { Stack } from "@/src/components/layout/Stack";
 import { Button } from "@/src/components/ui/Button";
 import { Heading } from "@/src/components/ui/Heading";
 import { Text } from "@/src/components/ui/Text";
+import { AuthenticationNotice } from "@/src/features/authentication/components/AuthenticationNotice";
 import { OtpInput } from "@/src/features/authentication/components/OtpInput";
-import { useOtpVerification } from "@/src/features/authentication/hooks/useOtpVerification";
-import { OTP_LENGTH, maskIdentifier } from "@/src/features/authentication/models/authentication";
+import { OtpResendTimer } from "@/src/features/authentication/components/OtpResendTimer";
+import { useResendOtp } from "@/src/features/authentication/hooks/useResendOtp";
+import { useVerifyOtp } from "@/src/features/authentication/hooks/useVerifyOtp";
+import { OTP_LENGTH } from "@/src/features/authentication/models/authentication";
 import { colors, spacing } from "@/src/theme";
 
+function formatExpiry(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}:${rest.toString().padStart(2, "0")}`;
+}
+
 export function OtpVerificationScreen() {
-  const params = useLocalSearchParams<{
-    identifier?: string;
-    requestId?: string;
-    resendAvailableAt?: string;
-  }>();
-
-  const identifier = params.identifier ?? "";
+  const router = useRouter();
   const {
-    code,
-    setCode,
+    challenge,
+    otp,
+    setOtp,
     fieldError,
-    submitError,
+    verifyError,
     isVerifying,
-    isResending,
-    canResend,
-    secondsUntilResend,
+    isExpired,
+    secondsUntilExpiry,
+    attemptsExhausted,
     verify,
-    resend,
-    changeIdentifier,
-  } = useOtpVerification({
-    identifier,
-    initialRequestId: params.requestId ?? "",
-    initialResendAvailableAt: params.resendAvailableAt ?? new Date().toISOString(),
-  });
+    resetForNewCode,
+    changeNumber,
+  } = useVerifyOtp();
+  const { resend, isResending, resendError } = useResendOtp({ onResent: resetForNewCode });
 
-  const errorMessage = fieldError ?? submitError;
+  // Opening this route without an active challenge (deep link, refresh,
+  // cleared flow) always lands back on sign-in — never a broken screen.
+  if (!challenge) {
+    return <Redirect href="/(auth)/sign-in" />;
+  }
+
+  const inlineError = fieldError ?? verifyError?.message ?? resendError?.message ?? null;
+  const verifyDisabled = isExpired || attemptsExhausted;
 
   return (
     <KeyboardScreen>
       <PageContainer>
         <Stack gap="xl" style={styles.content}>
-          <Stack gap="sm">
-            <Heading level="pageTitle">Enter verification code</Heading>
+          <Row justify="space-between">
+            <Heading level="pageTitle">Verify your identity</Heading>
+            <Button
+              label="Support"
+              variant="ghost"
+              onPress={() => router.push("/(public)/support")}
+            />
+          </Row>
+
+          <Stack gap="xs">
             <Text variant="body" color={colors.textSecondary}>
-              We sent a verification code to {maskIdentifier(identifier)}.
+              Enter the {OTP_LENGTH}-digit code sent to {challenge.maskedDestination}.
             </Text>
+            {isExpired ? (
+              <AuthenticationNotice message="This code has expired. Request a new code to continue." />
+            ) : secondsUntilExpiry !== null ? (
+              <Text variant="caption" color={colors.textSecondary}>
+                Code expires in {formatExpiry(secondsUntilExpiry)}
+              </Text>
+            ) : null}
           </Stack>
 
           <Stack gap="sm">
             <OtpInput
               length={OTP_LENGTH}
-              value={code}
-              onChange={setCode}
-              error={Boolean(errorMessage)}
-              disabled={isVerifying}
+              value={otp}
+              onChange={setOtp}
+              error={Boolean(inlineError)}
+              disabled={isVerifying || verifyDisabled}
             />
-            {errorMessage ? (
-              <Text variant="caption" color={colors.error} accessibilityRole="alert">
-                {errorMessage}
-              </Text>
-            ) : null}
+            {inlineError && !isExpired ? <AuthenticationNotice message={inlineError} /> : null}
           </Stack>
 
           <Stack gap="md">
-            <Button label="Verify" variant="primary" loading={isVerifying} onPress={verify} />
             <Button
-              label={canResend ? "Resend code" : `Resend code in ${secondsUntilResend}s`}
-              variant="secondary"
-              disabled={!canResend}
-              loading={isResending}
-              onPress={resend}
+              label="Verify"
+              variant="primary"
+              loading={isVerifying}
+              disabled={verifyDisabled}
+              onPress={verify}
             />
-            <Button
-              label="Use a different mobile number or ID"
-              variant="ghost"
-              onPress={changeIdentifier}
+            <OtpResendTimer
+              resendAvailableAt={challenge.resendAvailableAt}
+              onResend={resend}
+              isResending={isResending}
             />
+            <Button label="Change mobile number" variant="ghost" onPress={changeNumber} />
           </Stack>
         </Stack>
       </PageContainer>
@@ -89,6 +109,6 @@ export function OtpVerificationScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingVertical: spacing.xxl,
+    paddingVertical: spacing.xl,
   },
 });

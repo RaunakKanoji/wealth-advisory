@@ -1,19 +1,20 @@
-import { createDevAuthenticationService } from "@/src/features/authentication/services/authentication.dev";
 import type {
   RequestOtpInput,
   RequestOtpResult,
-  ResendOtpInput,
   VerifyOtpInput,
   VerifyOtpResult,
 } from "@/src/features/authentication/models/authentication";
 
+/**
+ * The single authentication boundary. Screens and hooks depend on this
+ * interface only — they must not know whether the active implementation is
+ * the deterministic mock, Clerk, or the future bank adapter. Adapter
+ * selection happens in authentication.factory.ts from typed runtime
+ * configuration.
+ */
 export interface AuthenticationService {
   requestOtp(input: RequestOtpInput): Promise<RequestOtpResult>;
   verifyOtp(input: VerifyOtpInput): Promise<VerifyOtpResult>;
-  resendOtp(input: ResendOtpInput): Promise<RequestOtpResult>;
+  resendOtp(challengeId: string): Promise<RequestOtpResult>;
+  signOut(): Promise<void>;
 }
-
-// Swap this for a real bank-API-backed implementation once approved.
-// Screens and hooks depend only on the AuthenticationService interface
-// above, so nothing outside this file needs to change when that happens.
-export const authenticationService: AuthenticationService = createDevAuthenticationService();
