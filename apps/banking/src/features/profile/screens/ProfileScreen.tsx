@@ -14,7 +14,7 @@ import { Card } from "@/src/components/ui/Card";
 import { Icon } from "@/src/components/ui/Icon";
 import { Text } from "@/src/components/ui/Text";
 import { PROFILE_WIREFRAME } from "@/src/features/profile/wireframe/profile.fixture";
-import { useSession } from "@/src/providers/SessionProvider";
+import { useSignOut } from "@/src/features/authentication/hooks/useSignOut";
 import { colors, spacing } from "@/src/theme";
 
 const data = PROFILE_WIREFRAME;
@@ -23,10 +23,11 @@ const data = PROFILE_WIREFRAME;
 // customer copy and the grouped entry list are static placeholders from
 // profile.fixture.ts. Navigation targets live here (not in the fixture);
 // unbuilt entries raise an Alert placeholder. Sign out is the only real action:
-// it clears the in-memory dev session via useSession().
+// it signs out of the authentication adapter, clears the stored session, and
+// returns to Welcome.
 export function ProfileScreen() {
   const router = useRouter();
-  const { signOut } = useSession();
+  const { signOut, isSigningOut } = useSignOut();
 
   // Each entry's target is resolved by its fixture id — real routes stay in the
   // screen, unbuilt destinations fall back to a preview-only Alert.
@@ -114,8 +115,13 @@ export function ProfileScreen() {
             </Section>
           ))}
 
-          {/* Sign out — the only real action; clears the in-memory dev session */}
-          <Button label="Sign out" variant="destructive" onPress={signOut} />
+          {/* Sign out — the only real action; clears adapter + stored session */}
+          <Button
+            label="Sign out"
+            variant="destructive"
+            loading={isSigningOut}
+            onPress={signOut}
+          />
         </Stack>
       </PageContainer>
     </Screen>
