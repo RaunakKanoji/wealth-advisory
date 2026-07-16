@@ -1,5 +1,10 @@
+import { env } from "@/src/config/env";
 import { SignInScreen } from "@/src/features/authentication";
+import { ClerkPrebuiltAuthScreen } from "@/src/features/authentication/screens/ClerkPrebuiltAuthScreen";
 
+// clerk mode renders Clerk's prebuilt auth UI (web SignIn card / native
+// AuthView in dev builds, custom flow in Expo Go); mock mode always uses the
+// bank's custom OTP flow.
 export default function SignIn() {
-  return <SignInScreen />;
+  return env.authenticationMode === "clerk" ? <ClerkPrebuiltAuthScreen /> : <SignInScreen />;
 }
