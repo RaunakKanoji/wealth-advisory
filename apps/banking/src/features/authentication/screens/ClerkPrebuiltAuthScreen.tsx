@@ -24,7 +24,11 @@ function DevBuildAuthView() {
     const { AuthView } = require("@clerk/expo/native") as typeof import("@clerk/expo/native");
     return (
       <View style={styles.container}>
-        <AuthView />
+        {/* Required full-screen auth per the AuthView reference: no native
+            dismiss button — the customer must authenticate to continue.
+            Completion is observed by ClerkSessionBridge, and the (auth)
+            layout guard routes onward. */}
+        <AuthView isDismissible={false} />
       </View>
     );
   } catch {

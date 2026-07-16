@@ -9,7 +9,10 @@ import { useSession } from "@/src/features/session";
 // loaded auth state into the app's SessionProvider so routing guards work
 // identically across adapters. Renders nothing.
 export function ClerkSessionBridge() {
-  const { isLoaded, isSignedIn } = useAuth();
+  // Per the native-components reference: pending session tasks must not be
+  // treated as signed out, or AuthView's completion can be observed as a
+  // sign-out mid-flow.
+  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { syncExternalSession } = useSession();
 
