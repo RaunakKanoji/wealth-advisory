@@ -1,31 +1,31 @@
 import { EnvConfigError } from "@/src/config/env";
-import { resolveDevSessionStatus } from "@/src/config/devSession";
+import { resolveDevSessionShell } from "@/src/config/devSession";
 
-describe("resolveDevSessionStatus", () => {
-  it("defaults to unauthenticated (the real entry point) when the switch is unset", () => {
-    expect(resolveDevSessionStatus(undefined, "development")).toBe("unauthenticated");
-    expect(resolveDevSessionStatus("", "development")).toBe("unauthenticated");
+describe("resolveDevSessionShell", () => {
+  it("returns null (normal session bootstrap) when the switch is unset", () => {
+    expect(resolveDevSessionShell(undefined, "development")).toBeNull();
+    expect(resolveDevSessionShell("", "development")).toBeNull();
   });
 
-  it("maps each shell keyword to its session status in development", () => {
-    expect(resolveDevSessionStatus("public", "development")).toBe("unauthenticated");
-    expect(resolveDevSessionStatus("onboarding", "development")).toBe("onboarding-required");
-    expect(resolveDevSessionStatus("authenticated", "development")).toBe("active");
+  it("passes each shell keyword through in development", () => {
+    expect(resolveDevSessionShell("public", "development")).toBe("public");
+    expect(resolveDevSessionShell("onboarding", "development")).toBe("onboarding");
+    expect(resolveDevSessionShell("authenticated", "development")).toBe("authenticated");
   });
 
   it("also honors the switch in preview builds", () => {
-    expect(resolveDevSessionStatus("authenticated", "preview")).toBe("active");
+    expect(resolveDevSessionShell("authenticated", "preview")).toBe("authenticated");
   });
 
   it("rejects an unknown shell keyword", () => {
-    expect(() => resolveDevSessionStatus("dashboard", "development")).toThrow(EnvConfigError);
+    expect(() => resolveDevSessionShell("dashboard", "development")).toThrow(EnvConfigError);
   });
 
   it("refuses to honor the switch in production, so it can never ship to customers", () => {
-    expect(() => resolveDevSessionStatus("authenticated", "production")).toThrow(EnvConfigError);
+    expect(() => resolveDevSessionShell("authenticated", "production")).toThrow(EnvConfigError);
   });
 
   it("leaves production untouched when the switch is unset", () => {
-    expect(resolveDevSessionStatus(undefined, "production")).toBe("unauthenticated");
+    expect(resolveDevSessionShell(undefined, "production")).toBeNull();
   });
 });
