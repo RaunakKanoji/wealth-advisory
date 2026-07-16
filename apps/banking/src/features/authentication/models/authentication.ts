@@ -1,87 +1,60 @@
+// Authentication contracts. These types are the boundary between the UI and
+// whichever adapter (mock / Clerk / bank) fulfils the journey — screens and
+// hooks must not know which implementation is active.
+//
+// Tokens in these shapes are never rendered, logged, placed in route params,
+// sent to analytics, or included in crash reports.
+
 export const OTP_LENGTH = 6;
 
-export type AuthChannel = "sms" | "app";
+export type CustomerIdentifierType = "mobile-number" | "customer-id";
 
-export type RequestOtpInput = {
+export interface RequestOtpInput {
+  identifierType: CustomerIdentifierType;
   identifier: string;
-};
+}
 
-export type RequestOtpResult = {
-  requestId: string;
-  identifier: string;
-  channel: AuthChannel;
+export interface RequestOtpResult {
+  challengeId: string;
+  maskedDestination: string;
   expiresAt: string;
   resendAvailableAt: string;
-};
-
-export type VerifyOtpInput = {
-  requestId: string;
-  identifier: string;
-  code: string;
-};
-
-export type AuthenticatedUser = {
-  id: string;
-  identifier: string;
-};
-
-export type VerifyOtpResult = {
-  user: AuthenticatedUser;
-};
-
-export type ResendOtpInput = {
-  requestId: string;
-  identifier: string;
-};
-
-export type AuthenticationErrorCode =
-  | "invalid-identifier"
-  | "invalid-otp"
-  | "expired-otp"
-  | "rate-limited"
-  | "network-error"
-  | "service-unavailable";
-
-// Screens must never interpret raw backend/service errors directly — they
-// only ever see this typed code plus the customer-safe message below.
-export class AuthenticationServiceError extends Error {
-  readonly code: AuthenticationErrorCode;
-
-  constructor(code: AuthenticationErrorCode, message: string) {
-    super(message);
-    this.name = "AuthenticationServiceError";
-    this.code = code;
-  }
 }
 
-export function getAuthenticationErrorMessage(code: AuthenticationErrorCode): string {
-  switch (code) {
-    case "invalid-identifier":
-      return "Enter a valid mobile number or customer ID to continue.";
-    case "invalid-otp":
-      return "That code didn't match. Check the code and try again.";
-    case "expired-otp":
-      return "This code has expired. Request a new one to continue.";
-    case "rate-limited":
-      return "Too many attempts. Please wait a moment before trying again.";
-    case "network-error":
-      return "We couldn't reach the network. Check your connection and try again.";
-    case "service-unavailable":
-      return "Sign-in is temporarily unavailable. Please try again shortly.";
-    default:
-      return "Something went wrong. Please try again.";
-  }
+export interface VerifyOtpInput {
+  challengeId: string;
+  otp: string;
 }
 
-// Masks all but the last 3 characters for customer-facing display — never
-// render the full identifier once it's been collected. Does not affect what
-// gets sent to the service, only what's shown on screen.
-export function maskIdentifier(identifier: string): string {
-  const digitsOnly = identifier.replace(/\D/g, "");
-  if (digitsOnly.length >= 10) {
-    const last3 = digitsOnly.slice(-3);
-    return `+91 ••••• ••${last3}`;
-  }
-  const last3 = identifier.slice(-3);
-  return `••••${last3}`;
+export type CustomerOnboardingStatus =
+  | "consent-required"
+  | "profile-required"
+  | "risk-profile-required"
+  | "complete";
+
+export interface AuthenticatedCustomer {
+  customerId: string;
+  displayName?: string;
+  onboardingStatus: CustomerOnboardingStatus;
+}
+
+export interface AuthenticationSession {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt: string;
+}
+
+export interface VerifyOtpResult {
+  session: AuthenticationSession;
+  customer: AuthenticatedCustomer;
+}
+
+/**
+ * Masks a normalized 10-digit mobile number for customer-facing display:
+ * "9876543210" -> "+91 ••••• ••210". The full number is never shown again
+ * after the OTP request, and never placed in route parameters.
+ */
+export function maskMobileNumber(normalized: string): string {
+  const last3 = normalized.slice(-3);
+  return `+91 ••••• ••${last3}`;
 }
