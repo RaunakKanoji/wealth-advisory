@@ -1,13 +1,22 @@
 import { Redirect, Stack } from "expo-router";
 
+import { LoadingState } from "@/src/components/feedback/LoadingState";
+import { Screen } from "@/src/components/layout/Screen";
 import { ConsentProvider } from "@/src/features/consent";
-import { useSession } from "@/src/providers/SessionProvider";
-import { getOnboardingGroupRedirect } from "@/src/providers/sessionRouteGuards";
+import { getOnboardingGroupRedirect, useSession } from "@/src/features/session";
 
 export default function OnboardingLayout() {
   const { status } = useSession();
-  const redirect = getOnboardingGroupRedirect(status);
 
+  if (status === "bootstrapping") {
+    return (
+      <Screen>
+        <LoadingState label="Loading your account" />
+      </Screen>
+    );
+  }
+
+  const redirect = getOnboardingGroupRedirect(status);
   if (redirect) {
     return <Redirect href={redirect} />;
   }
