@@ -9,7 +9,13 @@ import { colors, spacing } from "@/src/theme";
 // card variants): a back control so a customer who picked the wrong entry
 // action can return to the welcome screen, plus the brand eyebrow so the
 // Clerk surface always sits inside recognisable IDBI chrome.
-export function AuthScreenHeader() {
+type AuthScreenHeaderProps = {
+  /** Native AuthView renders its own back control on inner steps — pass
+   *  false there to avoid two chevrons. Web keeps the app's back button. */
+  showBack?: boolean;
+};
+
+export function AuthScreenHeader({ showBack = true }: AuthScreenHeaderProps) {
   const router = useRouter();
 
   const handleBack = () => {
@@ -22,7 +28,11 @@ export function AuthScreenHeader() {
 
   return (
     <View style={styles.header}>
-      <IconButton icon="back" accessibilityLabel="Go back" onPress={handleBack} />
+      {showBack ? (
+        <IconButton icon="back" accessibilityLabel="Go back" onPress={handleBack} />
+      ) : (
+        <View style={styles.spacer} />
+      )}
       {/* IDBI Bank lockup (reference logo: orange IDBI, green BANK). */}
       <View style={styles.lockup} accessible accessibilityLabel="IDBI Bank">
         <Text variant="sectionTitle" color={colors.brandSecondary} style={styles.brand}>
