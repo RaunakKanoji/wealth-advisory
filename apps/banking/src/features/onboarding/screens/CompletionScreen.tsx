@@ -1,4 +1,6 @@
+import { useUser } from "@clerk/expo";
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { PageContainer } from "@/src/components/layout/PageContainer";
@@ -10,22 +12,36 @@ import { Heading } from "@/src/components/ui/Heading";
 import { Icon } from "@/src/components/ui/Icon";
 import { Text } from "@/src/components/ui/Text";
 import { ONBOARDING_WIREFRAME } from "@/src/features/onboarding/wireframe/onboarding.fixture";
-import { useSession } from "@/src/features/session";
 import { colors, radius, spacing } from "@/src/theme";
 
 const data = ONBOARDING_WIREFRAME.completion;
 
 // Onboarding step 3 of 3 — celebration and the real onboarding -> app
-// hand-off. completeOnboarding() flips the session to active and the router
-// replace drops the customer into the authenticated tab shell. All copy is
-// static placeholder content from onboarding.fixture.ts.
+// hand-off. Completion is persisted to Clerk user metadata (unsafeMetadata —
+// the client-writable slot; the bank's backoffice would set publicMetadata in
+// production) so the root dispatcher skips onboarding on every future
+// sign-in, then the route is replaced with the protected app shell.
 export function CompletionScreen() {
   const router = useRouter();
-  const { completeOnboarding } = useSession();
+  const { user } = useUser();
+  const [isCompleting, setIsCompleting] = useState(false);
 
-  const handleEnterDashboard = () => {
-    completeOnboarding();
-    router.replace("/(app)/(tabs)");
+  const handleEnterDashboard = async () => {
+    if (isCompleting) {
+      return;
+    }
+    setIsCompleting(true);
+    try {
+      await user?.update({
+        unsafeMetadata: { ...user.unsafeMetadata, onboardingStatus: "complete" },
+      });
+    } catch {
+      // Persistence failure must not trap the customer in onboarding — the
+      // dispatcher will simply route them through it again next session.
+    } finally {
+      setIsCompleting(false);
+      router.replace("/(app)/(tabs)");
+    }
   };
 
   return (
@@ -67,7 +83,11 @@ export function CompletionScreen() {
             {data.note}
           </Text>
 
-          <Button label="Enter your dashboard" onPress={handleEnterDashboard} />
+          <Button
+            label="Enter your dashboard"
+            loading={isCompleting}
+            onPress={handleEnterDashboard}
+          />
         </Stack>
       </PageContainer>
     </Screen>

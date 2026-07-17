@@ -8,7 +8,6 @@ import { Stack } from "@/src/components/layout/Stack";
 import { Button } from "@/src/components/ui/Button";
 import { Heading } from "@/src/components/ui/Heading";
 import { Text } from "@/src/components/ui/Text";
-import { env } from "@/src/config/env";
 import { colors, radius, spacing } from "@/src/theme";
 
 // Decorative hero block (hi-fi reference: abstract gradient shapes on the
@@ -75,13 +74,11 @@ export function WelcomeScreen() {
               variant="primary"
               onPress={() => router.push("/(auth)/sign-in")}
             />
-            {env.authenticationMode === "clerk" ? (
-              <Button
-                label="Create account"
-                variant="secondary"
-                onPress={() => router.push("/(auth)/sign-up")}
-              />
-            ) : null}
+            <Button
+              label="Create account"
+              variant="secondary"
+              onPress={() => router.push("/(auth)/sign-up")}
+            />
             <Stack gap="xs" align="center">
               <Button
                 label="Read our disclosures"

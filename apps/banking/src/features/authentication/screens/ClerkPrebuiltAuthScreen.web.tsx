@@ -3,13 +3,13 @@ import { StyleSheet, View } from "react-native";
 
 import { Screen } from "@/src/components/layout/Screen";
 
-// Clerk's prebuilt auth UI for WEB builds (Metro resolves this variant on
-// web; native resolves ClerkPrebuiltAuthScreen.tsx). Renders Clerk's SignIn
-// or SignUp card with every strategy enabled on the instance. The cross-links
+// Clerk's prebuilt auth UI for WEB builds (native resolves the .tsx variant,
+// which renders the native <AuthView/>). The cards inherit the IDBI theme
+// from the root ClerkProvider's appearance prop, and the cross-links
 // (signUpUrl / signInUrl) point at the app's OWN routes so the flow never
-// leaves for Clerk's hosted accounts.dev portal. hash routing keeps Clerk's
-// internal steps on the current route. Completion flips Clerk's auth state
-// and ClerkSessionBridge + the (auth) layout guard route the customer onward.
+// leaves for Clerk's hosted portal. hash routing keeps Clerk's internal
+// steps on the current route; completion flips Clerk auth state and the root
+// Stack.Protected guard routes the customer onward.
 
 export type ClerkAuthMode = "signIn" | "signUp";
 

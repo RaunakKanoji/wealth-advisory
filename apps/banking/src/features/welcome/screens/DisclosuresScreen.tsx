@@ -31,7 +31,7 @@ export function DisclosuresScreen() {
               icon="back"
               accessibilityLabel="Go back"
               onPress={() =>
-                router.canGoBack() ? router.back() : router.replace("/(public)/welcome")
+                router.canGoBack() ? router.back() : router.replace("/(auth)")
               }
             />
             <Text variant="caption" color={colors.brandPrimary}>

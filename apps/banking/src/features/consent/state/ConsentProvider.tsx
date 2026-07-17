@@ -1,3 +1,4 @@
+import { useUser } from "@clerk/expo";
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
 import type { PropsWithChildren } from "react";
 import { Platform } from "react-native";
@@ -10,7 +11,6 @@ import type {
   ConsentReceipt,
 } from "@/src/features/consent/models/consent";
 import { consentService } from "@/src/features/consent/services/consent.service";
-import { useSession } from "@/src/features/session";
 
 export type ConsentPhase =
   | "loading"
@@ -123,7 +123,7 @@ const ConsentContext = createContext<ConsentContextValue | null>(null);
 // selections or decisions.
 export function ConsentProvider({ children }: PropsWithChildren) {
   const [state, dispatch] = useReducer(consentReducer, initialState);
-  const { customer } = useSession();
+  const { user } = useUser();
 
   const reload = useCallback(() => {
     dispatch({ type: "LOAD_START" });
@@ -190,7 +190,7 @@ export function ConsentProvider({ children }: PropsWithChildren) {
       }));
 
       const receipt = await consentService.submitConsent({
-        customerId: customer?.customerId ?? "unknown",
+        customerId: user?.id ?? "unknown",
         decisions,
         policyVersion: state.policyVersion,
         channel: Platform.OS === "web" ? "web" : "mobile",
@@ -205,7 +205,7 @@ export function ConsentProvider({ children }: PropsWithChildren) {
           : getConsentErrorMessage("network-error");
       dispatch({ type: "SUBMIT_ERROR", message });
     }
-  }, [state.categories, state.policyVersion, state.acknowledged, customer]);
+  }, [state.categories, state.policyVersion, state.acknowledged, user?.id]);
 
   const value = useMemo(
     () => ({

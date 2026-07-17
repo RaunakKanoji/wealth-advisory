@@ -1,5 +1,5 @@
 import { WelcomeScreen } from "@/src/features/welcome";
 
-export default function Welcome() {
+export default function AuthEntry() {
   return <WelcomeScreen />;
 }

@@ -6,9 +6,10 @@ import { Screen } from "@/src/components/layout/Screen";
 import { spacing } from "@/src/theme";
 
 // Clerk-managed account screen for WEB builds (native resolves the .tsx
-// variant). Renders Clerk's prebuilt <UserProfile/> card — profile details,
-// security, connected accounts, active sessions — inside the app's detail
-// shell. hash routing keeps Clerk's internal steps on this route.
+// variant with <UserProfileView/>). Renders Clerk's prebuilt <UserProfile/>
+// card — profile details, security, active sessions — inside the app's
+// detail shell, themed by the root ClerkProvider's appearance prop. hash
+// routing keeps Clerk's internal steps on this route.
 export function ClerkAccountScreen() {
   return (
     <Screen scroll>

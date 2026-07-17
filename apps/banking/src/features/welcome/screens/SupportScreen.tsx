@@ -39,7 +39,7 @@ export function SupportScreen() {
               icon="back"
               accessibilityLabel="Go back"
               onPress={() =>
-                router.canGoBack() ? router.back() : router.replace("/(public)/welcome")
+                router.canGoBack() ? router.back() : router.replace("/(auth)")
               }
             />
             <Text variant="caption" color={colors.brandPrimary}>
@@ -92,7 +92,7 @@ export function SupportScreen() {
           <Button
             label="Back to welcome"
             variant="ghost"
-            onPress={() => router.replace("/(public)/welcome")}
+            onPress={() => router.replace("/(auth)")}
           />
         </Stack>
       </PageContainer>

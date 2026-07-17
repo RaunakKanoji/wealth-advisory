@@ -11,16 +11,15 @@ jest.mock("expo-network", () => ({
   }),
 }));
 
-// Clerk is exercised only in clerk authentication mode (never in jest — tests
-// run with the development default, mock mode) but the adapter/factory import
-// chain pulls @clerk/expo in at module load. Stub the surface the app touches
-// so no test depends on Clerk internals or native peers.
+process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_fixture";
+
+// Auth component behavior is covered in a native development build. Unit
+// tests use a stable signed-out Clerk surface and do not load native peers.
 jest.mock("@clerk/expo", () => ({
   ClerkProvider: ({ children }: { children: unknown }) => children,
-  getClerkInstance: jest.fn(() => ({ client: null })),
-  isClerkAPIResponseError: jest.fn(() => false),
+  useClerk: jest.fn(() => ({ signOut: jest.fn() })),
   useAuth: jest.fn(() => ({ isLoaded: true, isSignedIn: false })),
-  useUser: jest.fn(() => ({ user: null })),
+  useUser: jest.fn(() => ({ user: { id: "user_test" } })),
 }));
 jest.mock("@clerk/expo/token-cache", () => ({ tokenCache: {} }));
 

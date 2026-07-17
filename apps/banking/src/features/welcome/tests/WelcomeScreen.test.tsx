@@ -9,7 +9,7 @@ jest.mock("expo-router", () => ({
 }));
 
 describe("WelcomeScreen", () => {
-  it("navigates to sign-in when the customer continues", async () => {
+  it("navigates to Clerk sign-in when the customer continues", async () => {
     const push = jest.fn();
     (useRouter as jest.Mock).mockReturnValue({ push });
 
@@ -18,5 +18,16 @@ describe("WelcomeScreen", () => {
     await fireEvent.press(getByRole("button", { name: "Sign in" }));
 
     expect(push).toHaveBeenCalledWith("/(auth)/sign-in");
+  });
+
+  it("navigates to Clerk sign-up when the customer creates an account", async () => {
+    const push = jest.fn();
+    (useRouter as jest.Mock).mockReturnValue({ push });
+
+    const { getByRole } = await render(<WelcomeScreen />);
+
+    await fireEvent.press(getByRole("button", { name: "Create account" }));
+
+    expect(push).toHaveBeenCalledWith("/(auth)/sign-up");
   });
 });

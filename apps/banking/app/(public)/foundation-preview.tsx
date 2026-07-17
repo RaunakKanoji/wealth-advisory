@@ -40,7 +40,7 @@ const SHELL_GROUPS: { title: string; description: string; links: ShellLink[] }[]
     title: "Public shell",
     description: "Bank identity, page container, support action. No session required.",
     links: [
-      { label: "Welcome", href: "/(public)/welcome" },
+      { label: "Welcome", href: "/(auth)" },
       { label: "Disclosures", href: "/(public)/disclosures" },
       { label: "Support", href: "/(public)/support" },
     ],
@@ -50,13 +50,13 @@ const SHELL_GROUPS: { title: string; description: string; links: ShellLink[] }[]
     description: "Secure-access heading, keyboard-safe content, support action. Wireframes only.",
     links: [
       { label: "Sign in", href: "/(auth)/sign-in" },
-      { label: "Verify OTP", href: "/(auth)/verify-otp" },
+      { label: "Create account", href: "/(auth)/sign-up" },
     ],
   },
   {
     title: "Onboarding shell",
     description:
-      "Progress, step title, back, sticky action. Route-guarded — set EXPO_PUBLIC_DEV_SESSION=onboarding to enter it directly.",
+      "Progress, step title, back, sticky action. Available only to an authenticated Clerk session.",
     links: [
       { label: "Consent introduction", href: "/(onboarding)/consent/introduction", note: "guarded" },
       { label: "Financial profile", href: "/(onboarding)/financial-profile", note: "guarded" },
@@ -67,7 +67,7 @@ const SHELL_GROUPS: { title: string; description: string; links: ShellLink[] }[]
   {
     title: "Authenticated shell",
     description:
-      "Header, primary navigation, notification + avatar actions. Route-guarded — set EXPO_PUBLIC_DEV_SESSION=authenticated to enter it.",
+      "Header, primary navigation, notification + avatar actions. Available only to an authenticated Clerk session.",
     links: [{ label: "Home dashboard & tabs", href: "/(app)/(tabs)", note: "guarded" }],
   },
 ];

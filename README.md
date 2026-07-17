@@ -38,35 +38,31 @@ Start the Expo development server:
 pnpm dev
 ```
 
-Then press `a` for Android, `i` for iOS, or `w` for web, or open the printed
-URL in Expo Go.
+Clerk's native authentication UI requires a development build; Expo Go and
+web are not authentication targets for this app.
 
 ## Running authentication locally
 
-Authentication is adapter-based (`EXPO_PUBLIC_AUTHENTICATION_MODE`):
+Authentication uses Clerk's native Expo components and requires a
+**development build**. Expo Go is not supported for the authentication UI.
 
-- `mock` (development default) — deterministic development flow, works
-  everywhere including Expo Go. Dev customer: mobile `9876543210`,
-  OTP `123456`.
-- `clerk` — Clerk's prebuilt components. Web renders Clerk's `SignIn`/`SignUp`
-  cards; iOS/Android render the native `AuthView`, which requires a
-  **development build** (Expo Go is NOT supported for Clerk's native UI):
+1. Copy `apps/banking/.env.example` to `apps/banking/.env.local` and set
+   `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`.
+2. In Clerk Dashboard, enable Native API and enable email address + password
+   authentication for the selected application.
+3. Install dependencies from the repository root with `pnpm install`.
+4. Launch from `apps/banking` with `npx expo run:ios` or
+   `npx expo run:android`.
 
-  1. Add `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` and
-     `EXPO_PUBLIC_AUTHENTICATION_MODE=clerk` to `apps/banking/.env.local`.
-  2. Ensure the Clerk application's Native API is enabled in the dashboard.
-  3. From `apps/banking`, run `npx expo run:ios` or `npx expo run:android`.
-
-  Sessions are cached in secure storage via Clerk's token cache and persist
-  across app restarts. No authentication step opens Clerk's hosted pages or
-  the system browser.
+Sign-in and sign-up both render `AuthView` inside the app. Clerk's token cache
+uses secure storage so the session survives app restarts; root protected
+routes remove auth screens after sign-in and protected screens after sign-out.
 
 Platform shortcuts are also available from the root:
 
 ```bash
 pnpm android
 pnpm ios
-pnpm web
 ```
 
 ## Quality checks
