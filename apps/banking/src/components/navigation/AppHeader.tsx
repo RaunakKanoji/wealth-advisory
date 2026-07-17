@@ -1,3 +1,4 @@
+import { useUser } from "@clerk/expo";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 
@@ -17,6 +18,7 @@ type AppHeaderProps = {
 // screen's <Screen>, so safe-area insets are already applied when it mounts.
 export function AppHeader({ initials = "AN" }: AppHeaderProps) {
   const router = useRouter();
+  const { user } = useUser();
 
   const avatarShortcut = (
     <Pressable
@@ -24,7 +26,12 @@ export function AppHeader({ initials = "AN" }: AppHeaderProps) {
       accessibilityLabel="Your profile"
       onPress={() => router.navigate("/(app)/(tabs)/profile")}
     >
-      <Avatar initials={initials} size="sm" />
+      {/* Clerk profile image when available; initials otherwise. */}
+      <Avatar
+        source={user?.imageUrl ? { uri: user.imageUrl } : undefined}
+        initials={initials}
+        size="sm"
+      />
     </Pressable>
   );
 
