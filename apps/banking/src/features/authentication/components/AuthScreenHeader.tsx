@@ -23,9 +23,16 @@ export function AuthScreenHeader() {
   return (
     <View style={styles.header}>
       <IconButton icon="back" accessibilityLabel="Go back" onPress={handleBack} />
-      <Text variant="caption" color={colors.brandSecondaryStrong} style={styles.brand}>
-        IDBI WEALTH ADVISORY
-      </Text>
+      {/* IDBI Bank lockup (reference logo: orange IDBI, green BANK). */}
+      <View style={styles.lockup} accessible accessibilityLabel="IDBI Bank">
+        <Text variant="sectionTitle" color={colors.brandSecondary} style={styles.brand}>
+          IDBI
+        </Text>
+        <Text variant="sectionTitle" color={colors.brandPrimary} style={styles.brand}>
+          {" "}
+          BANK
+        </Text>
+      </View>
       {/* Spacer balances the back button so the brand stays centered. */}
       <View style={styles.spacer} />
     </View>
@@ -40,8 +47,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
+  lockup: {
+    flexDirection: "row",
+    alignItems: "baseline",
+  },
   brand: {
-    fontWeight: "700",
+    fontWeight: "800",
     letterSpacing: 1,
   },
   spacer: {
