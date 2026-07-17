@@ -11,16 +11,23 @@ import { Text } from "@/src/components/ui/Text";
 import { colors, spacing } from "@/src/theme";
 
 // Clerk's prebuilt auth UI for NATIVE targets (web builds resolve the
-// .web.tsx variant, which renders Clerk's <SignIn/> card). The native
-// <AuthView/> is rendered by the clerk-ios / clerk-android SDKs, which only
-// exist in a development build (npx expo prebuild && npx expo run:ios|android)
-// — Expo Go does not contain them, so there we show guidance instead.
+// .web.tsx variant, which renders Clerk's <SignIn/>/<SignUp/> cards). The
+// native <AuthView/> is rendered by the clerk-ios / clerk-android SDKs, which
+// only exist in a development build (npx expo run:ios|android) — Expo Go does
+// not contain them, so there we show guidance instead. Authentication stays
+// entirely inside the app: no hosted Clerk pages, no system browser.
 // Completion flips Clerk's auth state; ClerkSessionBridge and the (auth)
-// layout guard route the customer onward.
+// layout guard route the customer onward — no manual post-auth navigation.
+
+export type ClerkAuthMode = "signIn" | "signUp";
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
-function DevBuildAuthView() {
+type ClerkPrebuiltAuthScreenProps = {
+  mode: ClerkAuthMode;
+};
+
+function DevBuildAuthView({ mode }: ClerkPrebuiltAuthScreenProps) {
   try {
     // Lazy require so Expo Go never executes the native module lookup — a
     // static import would crash at bundle evaluation where clerk-ios/android
@@ -31,7 +38,7 @@ function DevBuildAuthView() {
       <View style={styles.container}>
         {/* Required full-screen auth per the AuthView reference: no native
             dismiss button — the customer must authenticate to continue. */}
-        <AuthView isDismissible={false} />
+        <AuthView mode={mode} isDismissible={false} />
       </View>
     );
   } catch {
@@ -68,11 +75,11 @@ function ExpoGoNotice() {
   );
 }
 
-export function ClerkPrebuiltAuthScreen() {
+export function ClerkPrebuiltAuthScreen({ mode }: ClerkPrebuiltAuthScreenProps) {
   if (isExpoGo) {
     return <ExpoGoNotice />;
   }
-  return <DevBuildAuthView />;
+  return <DevBuildAuthView mode={mode} />;
 }
 
 const styles = StyleSheet.create({

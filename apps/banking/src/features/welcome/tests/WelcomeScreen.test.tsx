@@ -15,7 +15,7 @@ describe("WelcomeScreen", () => {
 
     const { getByRole } = await render(<WelcomeScreen />);
 
-    await fireEvent.press(getByRole("button", { name: "Get started" }));
+    await fireEvent.press(getByRole("button", { name: "Sign in" }));
 
     expect(push).toHaveBeenCalledWith("/(auth)/sign-in");
   });

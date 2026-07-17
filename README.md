@@ -41,6 +41,26 @@ pnpm dev
 Then press `a` for Android, `i` for iOS, or `w` for web, or open the printed
 URL in Expo Go.
 
+## Running authentication locally
+
+Authentication is adapter-based (`EXPO_PUBLIC_AUTHENTICATION_MODE`):
+
+- `mock` (development default) — deterministic development flow, works
+  everywhere including Expo Go. Dev customer: mobile `9876543210`,
+  OTP `123456`.
+- `clerk` — Clerk's prebuilt components. Web renders Clerk's `SignIn`/`SignUp`
+  cards; iOS/Android render the native `AuthView`, which requires a
+  **development build** (Expo Go is NOT supported for Clerk's native UI):
+
+  1. Add `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` and
+     `EXPO_PUBLIC_AUTHENTICATION_MODE=clerk` to `apps/banking/.env.local`.
+  2. Ensure the Clerk application's Native API is enabled in the dashboard.
+  3. From `apps/banking`, run `npx expo run:ios` or `npx expo run:android`.
+
+  Sessions are cached in secure storage via Clerk's token cache and persist
+  across app restarts. No authentication step opens Clerk's hosted pages or
+  the system browser.
+
 Platform shortcuts are also available from the root:
 
 ```bash
