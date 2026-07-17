@@ -28,7 +28,7 @@ export function ClerkPrebuiltAuthScreen({ mode }: ClerkPrebuiltAuthScreenProps) 
     // Surface (white) background so the header band blends seamlessly into
     // AuthView's white sheet.
     <Screen edges={["top"]} backgroundColor={colors.surface}>
-      <AuthScreenHeader showBack={false} />
+      <AuthScreenHeader backControl="close" />
       <View style={styles.container}>
         <AuthView mode={mode} isDismissible={false} />
       </View>
