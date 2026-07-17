@@ -3,6 +3,7 @@ import { StyleSheet, View } from "react-native";
 
 import { Screen } from "@/src/components/layout/Screen";
 import { AuthScreenHeader } from "@/src/features/authentication/components/AuthScreenHeader";
+import { colors } from "@/src/theme";
 
 // Native-only Clerk authentication (web builds resolve the .web.tsx variant,
 // which renders the prebuilt SignIn/SignUp cards). AuthView owns credential
@@ -24,7 +25,9 @@ export function ClerkPrebuiltAuthScreen({ mode }: ClerkPrebuiltAuthScreenProps) 
     // Top inset only: the native AuthView applies its own bottom safe-area
     // inside its scroll content — adding ours as well squeezes its layout and
     // clips the bottom of the sheet (e.g. the development-mode watermark).
-    <Screen edges={["top"]}>
+    // Surface (white) background so the header band blends seamlessly into
+    // AuthView's white sheet.
+    <Screen edges={["top"]} backgroundColor={colors.surface}>
       <AuthScreenHeader />
       <View style={styles.container}>
         <AuthView mode={mode} isDismissible={false} />
