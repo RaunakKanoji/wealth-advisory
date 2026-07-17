@@ -21,7 +21,10 @@ type ClerkPrebuiltAuthScreenProps = {
 
 export function ClerkPrebuiltAuthScreen({ mode }: ClerkPrebuiltAuthScreenProps) {
   return (
-    <Screen>
+    // Top inset only: the native AuthView applies its own bottom safe-area
+    // inside its scroll content — adding ours as well squeezes its layout and
+    // clips the bottom of the sheet (e.g. the development-mode watermark).
+    <Screen edges={["top"]}>
       <AuthScreenHeader />
       <View style={styles.container}>
         <AuthView mode={mode} isDismissible={false} />
