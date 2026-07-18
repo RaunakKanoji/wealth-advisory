@@ -15,7 +15,9 @@ export default function NativeProfileScreen() {
   const hasDismissed = React.useRef(false);
 
   const pathnameRef = React.useRef(pathname);
-  pathnameRef.current = pathname;
+  React.useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
 
   const handleDismiss = () => {
     if (!isSignedIn) return;
