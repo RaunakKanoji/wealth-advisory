@@ -5,7 +5,7 @@ export default function AuthLayout() {
   const { isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
 
   if (isSignedIn) {
-    return <Redirect href="/(app)" />;
+    return <Redirect href="/(app)/(tabs)" />;
   }
 
   return (

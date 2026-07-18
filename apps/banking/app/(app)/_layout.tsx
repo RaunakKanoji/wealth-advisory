@@ -10,11 +10,23 @@ export default function AppLayout() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
       <Stack.Screen
         name="profile"
         options={{
           presentation: "modal",
+        }}
+      />
+      <Stack.Screen
+        name="notifications"
+        options={{
+          headerShown: true,
+          title: "Notifications",
+          headerTintColor: "#14201D",
+          headerStyle: {
+            backgroundColor: "#FFFFFF",
+          },
+          headerShadowVisible: false,
         }}
       />
     </Stack>
