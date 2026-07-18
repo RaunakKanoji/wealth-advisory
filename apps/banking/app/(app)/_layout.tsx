@@ -1,28 +1,22 @@
+import { useAuth } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 
-import { LoadingState } from "@/src/components/feedback/LoadingState";
-import { Screen } from "@/src/components/layout/Screen";
-import { useSession } from "@/src/providers/SessionProvider";
-import { getAppGroupRedirect } from "@/src/providers/sessionRouteGuards";
-
 export default function AppLayout() {
-  const { status } = useSession();
+  const { isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
 
-  // While a persisted session is being restored, hold the shell in a loading
-  // state instead of bouncing the customer to welcome and back.
-  if (status === "restoring") {
-    return (
-      <Screen>
-        <LoadingState label="Loading your account" />
-      </Screen>
-    );
+  if (!isSignedIn) {
+    return <Redirect href="/(auth)" />;
   }
 
-  const redirect = getAppGroupRedirect(status);
-
-  if (redirect) {
-    return <Redirect href={redirect} />;
-  }
-
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" options={{ gestureEnabled: false }} />
+      <Stack.Screen
+        name="profile"
+        options={{
+          presentation: "modal",
+        }}
+      />
+    </Stack>
+  );
 }

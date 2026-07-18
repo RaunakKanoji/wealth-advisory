@@ -43,7 +43,14 @@ app-example
 # generated native folders
 /ios
 /android
+apps/*/ios/
+apps/*/android/
 
 # project context
 .wealth-advisory-documentation/
 .project-context/
+
+# local agent skills
+.agents/
+.claude/
+.vscode/

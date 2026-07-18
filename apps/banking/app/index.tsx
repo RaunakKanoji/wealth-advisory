@@ -1,25 +1,16 @@
+import { useAuth } from "@clerk/expo";
 import { Redirect } from "expo-router";
 
-import { LoadingState } from "@/src/components/feedback/LoadingState";
-import { Screen } from "@/src/components/layout/Screen";
-import { useSession } from "@/src/providers/SessionProvider";
-import { getRootRedirect } from "@/src/providers/sessionRouteGuards";
-
-// Thin root dispatcher: routes the customer to the shell that matches their
-// session status (public / onboarding / authenticated). The destination is
-// driven by the dev shell-preview switch during development; see
-// src/config/devSession.ts.
+// Thin root dispatcher. Clerk's load state is handled by the root navigator
+// (app/_layout.tsx shows the loading screen until isLoaded), so by the time
+// this renders the auth state is settled:
+//   signed out            -> authentication entry in (auth)
+//   signed in             -> authenticated app entry in (app)
 export default function Index() {
-  const { status } = useSession();
-  const redirect = getRootRedirect(status);
+  const { isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
 
-  if (!redirect) {
-    return (
-      <Screen>
-        <LoadingState label="Loading your account" />
-      </Screen>
-    );
+  if (!isSignedIn) {
+    return <Redirect href="/(auth)" />;
   }
-
-  return <Redirect href={redirect} />;
+  return <Redirect href="/(app)" />;
 }
