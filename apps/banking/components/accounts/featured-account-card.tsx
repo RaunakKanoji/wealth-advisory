@@ -19,7 +19,9 @@ export function FeaturedAccountCard({
   onPress,
 }: FeaturedAccountCardProps) {
   const isSmall = width < 330;
-  const formattedBalance = formatIndianCurrency(account.balance);
+  const formattedBalance = formatIndianCurrency(
+    account.availableBalance ?? account.balance,
+  );
   const balanceFontSize = Math.max(
     isSmall ? 22 : 24,
     Math.round((isSmall ? 28 : 32) * Math.min(1, 14 / formattedBalance.length)),

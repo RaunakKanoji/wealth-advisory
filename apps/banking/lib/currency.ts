@@ -61,7 +61,13 @@ export function formatIndianCurrencyShort(value: number): string {
 }
 
 function formatCompactUnit(value: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    maximumFractionDigits: 1,
-  }).format(value);
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      maximumFractionDigits: 1,
+    }).format(value);
+  } catch {
+    // Defensive fallback: round to at most 1 decimal digit without trailing zeros
+    const rounded = Math.round(value * 10) / 10;
+    return rounded.toString();
+  }
 }
