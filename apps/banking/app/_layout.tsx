@@ -1,39 +1,27 @@
 import { ClerkProvider, useAuth } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { Stack } from "expo-router";
+import React from "react";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { LoadingState } from "@/src/components/feedback/LoadingState";
-import { Screen } from "@/src/components/layout/Screen";
-import { env } from "@/src/config/env";
-import { clerkAppearance } from "@/src/features/authentication/clerk-appearance";
-import { AppProviders } from "@/src/providers/AppProviders";
+import { AuthLoadingScreen } from "@/components/auth-loading-screen";
+import { env } from "@/lib/env";
+import { clerkAppearance } from "@/lib/clerk-appearance";
 
-// Root error boundary: any unhandled render error anywhere in the app falls
-// back to customer-safe copy with a retry (F008).
-export { RouteErrorFallback as ErrorBoundary } from "@/src/components/feedback/RouteErrorFallback";
+export { ConfigurationErrorScreen as ErrorBoundary } from "@/components/configuration-error-screen";
 
 function RootNavigator() {
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded } = useAuth({ treatPendingAsSignedOut: false });
 
   if (!isLoaded) {
-    return (
-      <Screen>
-        <LoadingState label="Loading your account" />
-      </Screen>
-    );
+    return <AuthLoadingScreen />;
   }
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
-      <Stack.Screen name="(public)" />
-      <Stack.Protected guard={!isSignedIn}>
-        <Stack.Screen name="(auth)" />
-      </Stack.Protected>
-      <Stack.Protected guard={Boolean(isSignedIn)}>
-        <Stack.Screen name="(onboarding)" />
-        <Stack.Screen name="(app)" />
-      </Stack.Protected>
+      <Stack.Screen name="(auth)" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="(app)" />
     </Stack>
   );
 }
@@ -41,13 +29,13 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <ClerkProvider
-      publishableKey={env.clerkPublishableKey}
+      publishableKey={env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY}
       tokenCache={tokenCache}
       appearance={clerkAppearance}
     >
-      <AppProviders>
+      <SafeAreaProvider>
         <RootNavigator />
-      </AppProviders>
+      </SafeAreaProvider>
     </ClerkProvider>
   );
 }

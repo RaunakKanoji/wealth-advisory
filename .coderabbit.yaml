@@ -1,0 +1,10 @@
+reviews:
+  path_filters:
+    - "!**/*.md"
+    - "!**/*.test.ts"
+    - "!**/*.test.tsx"
+    - "!**/*.json"
+    - "!**/*.png"
+    - "!**/*.svg"
+    - "!**/*.gitkeep"
+    - "!**/.agents/**"

@@ -19,7 +19,11 @@ jest.mock("@clerk/expo", () => ({
   ClerkProvider: ({ children }: { children: unknown }) => children,
   useClerk: jest.fn(() => ({ signOut: jest.fn() })),
   useAuth: jest.fn(() => ({ isLoaded: true, isSignedIn: false })),
-  useUser: jest.fn(() => ({ user: { id: "user_test" } })),
+  useUser: jest.fn(() => ({
+    isLoaded: true,
+    isSignedIn: false,
+    user: null,
+  })),
 }));
 jest.mock("@clerk/expo/token-cache", () => ({ tokenCache: {} }));
 

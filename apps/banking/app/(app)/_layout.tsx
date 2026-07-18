@@ -1,8 +1,22 @@
-import { Stack } from "expo-router";
+import { useAuth } from "@clerk/expo";
+import { Redirect, Stack } from "expo-router";
 
-// Authenticated shell. Access control lives in the root navigator's
-// Stack.Protected guard (app/_layout.tsx) — the single ClerkProvider also
-// lives there; never nest another provider or guard in group layouts.
 export default function AppLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  const { isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+
+  if (!isSignedIn) {
+    return <Redirect href="/(auth)" />;
+  }
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" options={{ gestureEnabled: false }} />
+      <Stack.Screen
+        name="profile"
+        options={{
+          presentation: "modal",
+        }}
+      />
+    </Stack>
+  );
 }

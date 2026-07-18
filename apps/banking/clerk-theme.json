@@ -17,6 +17,7 @@
     "shadow": "#00000020"
   },
   "design": {
-    "borderRadius": 12
+    "borderRadius": 12,
+    "fontFamily": "Inter"
   }
 }

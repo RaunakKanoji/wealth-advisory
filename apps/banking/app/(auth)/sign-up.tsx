@@ -1,5 +1,18 @@
-import { ClerkPrebuiltAuthScreen } from "@/src/features/authentication/screens/ClerkPrebuiltAuthScreen";
+import { AuthView } from "@clerk/expo/native";
+import React from "react";
+import { StyleSheet, View } from "react-native";
 
-export default function SignUp() {
-  return <ClerkPrebuiltAuthScreen mode="signUp" />;
+export default function NativeSignUpScreen() {
+  return (
+    <View style={styles.container}>
+      <AuthView mode="signUp" isDismissible={false} />
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+});
