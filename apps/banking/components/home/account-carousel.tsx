@@ -71,7 +71,8 @@ export default function AccountCarousel({
         contentContainerStyle={{
           paddingLeft: 20,
           paddingRight: 20,
-          paddingVertical: 20, // Extra space to prevent shadow clipping
+          paddingTop: 4,
+          paddingBottom: 20, // Preserve space for the card shadow
           columnGap: gap,
         }}
         // Prevent scrollToIndex out of bounds warning
@@ -87,6 +88,6 @@ export default function AccountCarousel({
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 4,
+    marginVertical: 0,
   },
 });

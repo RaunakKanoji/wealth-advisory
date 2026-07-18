@@ -1,16 +1,22 @@
+export type AccountType =
+  | "savings"
+  | "current"
+  | "salary"
+  | "fixed-deposit"
+  | "recurring-deposit";
+
 export type BankAccount = {
   id: string;
   name: string;
-  type:
-    | "savings"
-    | "current"
-    | "salary"
-    | "fixed-deposit"
-    | "recurring-deposit";
-  availableBalance: number;
+  type: AccountType;
+  balance: number;
+  availableBalance?: number;
   lastFour: string;
-  isPrimary: boolean;
   currency: "INR";
+  isPrimary: boolean;
+  status: "active" | "inactive" | "matured";
+  maturityDate?: string;
+  cardAvailable?: boolean;
 };
 
 export type BankingActivity = {

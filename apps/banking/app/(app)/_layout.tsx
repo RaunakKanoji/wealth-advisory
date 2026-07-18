@@ -34,6 +34,13 @@ export default function AppLayout() {
       <Stack.Screen name="transfer" options={{ headerShown: false }} />
       <Stack.Screen name="services" options={{ headerShown: false }} />
       <Stack.Screen name="accounts/[accountId]" options={{ headerShown: false }} />
+      <Stack.Screen name="accounts/add" options={{ headerShown: false }} />
+      <Stack.Screen name="accounts/summary" options={{ headerShown: false }} />
+      <Stack.Screen name="accounts/statements" options={{ headerShown: false }} />
+      <Stack.Screen name="accounts/details" options={{ headerShown: false }} />
+      <Stack.Screen name="accounts/manage-card" options={{ headerShown: false }} />
+      <Stack.Screen name="accounts/actions" options={{ headerShown: false }} />
+      <Stack.Screen name="accounts/open-new" options={{ headerShown: false }} />
       <Stack.Screen name="activity/index" options={{ headerShown: false }} />
       <Stack.Screen name="activity/[transactionId]" options={{ headerShown: false }} />
     </Stack>
