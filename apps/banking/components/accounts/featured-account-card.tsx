@@ -19,6 +19,11 @@ export function FeaturedAccountCard({
   onPress,
 }: FeaturedAccountCardProps) {
   const isSmall = width < 330;
+  const formattedBalance = formatIndianCurrency(account.balance);
+  const balanceFontSize = Math.max(
+    isSmall ? 22 : 24,
+    Math.round((isSmall ? 28 : 32) * Math.min(1, 14 / formattedBalance.length)),
+  );
 
   return (
     <Pressable
@@ -54,11 +59,15 @@ export function FeaturedAccountCard({
         <View style={styles.balanceRow}>
           <Text
             adjustsFontSizeToFit
-            minimumFontScale={0.72}
+            minimumFontScale={0.65}
             numberOfLines={1}
-            style={[styles.balance, isSmall && styles.balanceSmall]}
+            style={[
+              styles.balance,
+              isSmall && styles.balanceSmall,
+              { fontSize: balanceFontSize, lineHeight: Math.round(balanceFontSize * 1.22) },
+            ]}
           >
-            {formatIndianCurrency(account.balance)}
+            {formattedBalance}
           </Text>
           <View style={styles.chevronTarget}>
             <Ionicons name="chevron-forward" size={31} color="#FFFFFF" />

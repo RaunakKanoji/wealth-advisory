@@ -55,6 +55,8 @@ export default function HomeSkeletons() {
           contentContainerStyle={{
             paddingLeft: 20,
             paddingRight: 20,
+            paddingTop: 4,
+            paddingBottom: 20,
             columnGap: 16,
           }}
         >
@@ -132,7 +134,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignSelf: "center",
     columnGap: 9,
-    marginTop: 0,
+    marginTop: 18,
   },
   dotSkeleton: {
     width: 10,
