@@ -21,7 +21,7 @@ export function formatIndianCurrency(
       maximumFractionDigits: showDecimals ? 2 : 0,
     });
     result = formatter.format(absVal);
-  } catch (e) {
+  } catch {
     // Fallback manual formatter for en-IN
     const parts = absVal.toFixed(showDecimals ? 2 : 0).split(".");
     let numStr = parts[0];
@@ -39,4 +39,35 @@ export function formatIndianCurrency(
 
   const sign = value < 0 ? "-" : (showSign && value > 0 ? "+" : "");
   return `${sign}₹ ${result}`;
+}
+
+export function formatIndianCurrencyWithoutSpace(value: number): string {
+  return formatIndianCurrency(value, { showDecimals: false }).replace("₹ ", "₹");
+}
+
+export function formatIndianCurrencyShort(value: number): string {
+  const absValue = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+
+  if (absValue >= 10000000) {
+    return `${sign}₹${formatCompactUnit(absValue / 10000000)} crore`;
+  }
+
+  if (absValue >= 100000) {
+    return `${sign}₹${formatCompactUnit(absValue / 100000)} lakhs`;
+  }
+
+  return formatIndianCurrencyWithoutSpace(value);
+}
+
+function formatCompactUnit(value: number): string {
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      maximumFractionDigits: 1,
+    }).format(value);
+  } catch {
+    // Defensive fallback: round to at most 1 decimal digit without trailing zeros
+    const rounded = Math.round(value * 10) / 10;
+    return rounded.toString();
+  }
 }

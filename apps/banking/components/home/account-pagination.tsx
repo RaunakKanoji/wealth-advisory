@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignSelf: "center",
     columnGap: 9,
-    marginTop: 0,
+    marginTop: 18,
   },
   dot: {
     width: 10,

@@ -31,6 +31,7 @@ export default function AppLayout() {
       />
       <Stack.Screen name="scan-qr" options={{ headerShown: false }} />
       <Stack.Screen name="cards" options={{ headerShown: false }} />
+      <Stack.Screen name="coach" options={{ headerShown: false }} />
       <Stack.Screen name="transfer" options={{ headerShown: false }} />
       <Stack.Screen name="services" options={{ headerShown: false }} />
       <Stack.Screen name="accounts/[accountId]" options={{ headerShown: false }} />

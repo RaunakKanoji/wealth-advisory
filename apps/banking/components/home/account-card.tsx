@@ -28,9 +28,15 @@ export default function AccountCard({ account }: AccountCardProps) {
   const cardPaddingHoriz = isSmall ? 20 : 24;
   const cardPaddingVert = isSmall ? 16 : 20;
 
-  // Typography scaling
-  const balanceFontSize = isSmall ? 30 : 36;
-  const balanceLineHeight = isSmall ? 36 : 44;
+  const formattedBalance = formatIndianCurrency(
+    account.availableBalance ?? account.balance,
+  );
+  // Keep long Indian-format balances on one line, including amounts around ₹100 Cr.
+  const balanceFontSize = Math.max(
+    isSmall ? 22 : 24,
+    Math.round((isSmall ? 30 : 32) * Math.min(1, 14 / formattedBalance.length)),
+  );
+  const balanceLineHeight = Math.round(balanceFontSize * 1.22);
 
   const handleDetailsPress = () => {
     router.push({
@@ -84,13 +90,13 @@ export default function AccountCard({ account }: AccountCardProps) {
         <Text
           numberOfLines={1}
           adjustsFontSizeToFit
-          minimumFontScale={0.7}
+            minimumFontScale={0.65}
           style={[
             styles.balanceText,
             { fontSize: balanceFontSize, lineHeight: balanceLineHeight },
           ]}
         >
-          {formatIndianCurrency(account.availableBalance ?? account.balance)}
+          {formattedBalance}
         </Text>
       </View>
 
