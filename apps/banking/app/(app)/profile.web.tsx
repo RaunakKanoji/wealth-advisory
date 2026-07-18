@@ -12,7 +12,7 @@ export default function WebProfileScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/(app)");
+      router.replace("/");
     }
   };
 

@@ -19,9 +19,9 @@ function RootNavigator() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
+      <Stack.Screen name="index" options={{ gestureEnabled: false }} />
       <Stack.Screen name="(auth)" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="(app)" />
+      <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
     </Stack>
   );
 }
