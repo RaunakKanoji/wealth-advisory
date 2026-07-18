@@ -2,11 +2,11 @@ import React from "react";
 
 import { AccountActionScreen } from "@/components/accounts/account-action-screen";
 
-export default function AccountDetailsScreen() {
+export default function AccountActionsScreen() {
   return (
     <AccountActionScreen
-      title="Account Details"
-      description="Review your balance, status, and account services."
+      title="More account actions"
+      description="Access additional services for this account."
     />
   );
 }

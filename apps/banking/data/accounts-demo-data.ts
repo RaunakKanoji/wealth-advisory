@@ -1,0 +1,53 @@
+import type { BankAccount } from "@/types/banking";
+
+/** Temporary typed fixture data until the accounts service is connected. */
+export const demoAccounts: BankAccount[] = [
+  {
+    id: "savings-primary",
+    name: "Savings Account",
+    type: "savings",
+    balance: 100000,
+    availableBalance: 100000,
+    lastFour: "1234",
+    currency: "INR",
+    isPrimary: true,
+    status: "active",
+    cardAvailable: true,
+  },
+  {
+    id: "current-account",
+    name: "Current Account",
+    type: "current",
+    balance: 125000,
+    availableBalance: 125000,
+    lastFour: "5678",
+    currency: "INR",
+    isPrimary: false,
+    status: "active",
+    cardAvailable: true,
+  },
+  {
+    id: "fixed-deposit",
+    name: "Fixed Deposit",
+    type: "fixed-deposit",
+    balance: 75000,
+    lastFour: "9012",
+    currency: "INR",
+    isPrimary: false,
+    status: "active",
+    maturityDate: "2027-06-12",
+    cardAvailable: false,
+  },
+  {
+    id: "recurring-deposit",
+    name: "Recurring Deposit",
+    type: "recurring-deposit",
+    balance: 45678,
+    lastFour: "3456",
+    currency: "INR",
+    isPrimary: false,
+    status: "active",
+    maturityDate: "2027-09-10",
+    cardAvailable: false,
+  },
+];

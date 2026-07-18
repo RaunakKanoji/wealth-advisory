@@ -102,7 +102,8 @@ export default function HomeScreen() {
 
   const contentMaxWidth = isTablet ? 720 : "100%";
   const horizontalPadding = isSmall ? 16 : 20;
-  const greetingFontSize = isSmall ? 26 : 28;
+  const greetingFontSize = isSmall ? 27 : 30;
+  const greetingLineHeight = isSmall ? 34 : 38;
 
   // Calculate bottom padding taking the absolute tab bar height into account
   const tabHeight = Platform.select({
@@ -152,7 +153,10 @@ export default function HomeScreen() {
             {/* Time-Aware Greeting */}
             <View style={{ paddingHorizontal: horizontalPadding }}>
               <Text
-                style={[styles.greeting, { fontSize: greetingFontSize }]}
+                style={[
+                  styles.greeting,
+                  { fontSize: greetingFontSize, lineHeight: greetingLineHeight },
+                ]}
                 accessibilityRole="header"
               >
                 {greeting}, {displayName}
@@ -220,7 +224,7 @@ const styles = StyleSheet.create({
   greeting: {
     color: "#111827",
     fontWeight: "700",
-    marginBottom: 22,
+    marginBottom: 24,
   },
   carouselSection: {
     // Greeting to account card: 24, Card to dots: 18, Dots to quick actions: 28

@@ -90,7 +90,7 @@ export default function AccountCard({ account }: AccountCardProps) {
             { fontSize: balanceFontSize, lineHeight: balanceLineHeight },
           ]}
         >
-          {formatIndianCurrency(account.availableBalance)}
+          {formatIndianCurrency(account.availableBalance ?? account.balance)}
         </Text>
       </View>
 
