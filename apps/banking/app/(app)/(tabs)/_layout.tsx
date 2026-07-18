@@ -16,7 +16,7 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: true,
-        header: () => <AppHeader unreadCount={1} />,
+        header: () => <AppHeader unreadCount={0} />,
         tabBarActiveTintColor: ACTIVE_COLOR,
         tabBarInactiveTintColor: INACTIVE_COLOR,
         tabBarHideOnKeyboard: true,
