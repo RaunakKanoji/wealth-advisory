@@ -1,0 +1,23 @@
+{
+  "colors": {
+    "primary": "#0B5B4C",
+    "primaryForeground": "#FFFFFF",
+    "background": "#FFFFFF",
+    "input": "#F8FAF9",
+    "inputForeground": "#14201D",
+    "foreground": "#14201D",
+    "mutedForeground": "#55655F",
+    "neutral": "#8A968F",
+    "border": "#C9CFCC",
+    "ring": "#0B5B4C",
+    "muted": "#E3F0EC",
+    "danger": "#B93A2B",
+    "success": "#156B40",
+    "warning": "#8A5A10",
+    "shadow": "#00000020"
+  },
+  "design": {
+    "borderRadius": 12,
+    "fontFamily": "Inter"
+  }
+}

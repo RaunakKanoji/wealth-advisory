@@ -1,15 +1,20 @@
+import { useAuth } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 
-import { useSession } from "@/src/providers/SessionProvider";
-import { getAuthGroupRedirect } from "@/src/providers/sessionRouteGuards";
-
 export default function AuthLayout() {
-  const { status } = useSession();
-  const redirect = getAuthGroupRedirect(status);
+  const { isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
 
-  if (redirect) {
-    return <Redirect href={redirect} />;
+  if (isSignedIn) {
+    return <Redirect href="/(app)" />;
   }
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        animation: "slide_from_right",
+        gestureEnabled: false,
+      }}
+    />
+  );
 }

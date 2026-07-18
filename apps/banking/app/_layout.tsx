@@ -1,20 +1,41 @@
+import { ClerkProvider, useAuth } from "@clerk/expo";
+import { tokenCache } from "@clerk/expo/token-cache";
 import { Stack } from "expo-router";
+import React from "react";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { AppProviders } from "@/src/providers/AppProviders";
+import { AuthLoadingScreen } from "@/components/auth-loading-screen";
+import { env } from "@/lib/env";
+import { clerkAppearance } from "@/lib/clerk-appearance";
 
-// Root error boundary: any unhandled render error anywhere in the app falls
-// back to customer-safe copy with a retry (F008).
-export { RouteErrorFallback as ErrorBoundary } from "@/src/components/feedback/RouteErrorFallback";
+export { ConfigurationErrorScreen as ErrorBoundary } from "@/components/configuration-error-screen";
+
+function RootNavigator() {
+  const { isLoaded } = useAuth({ treatPendingAsSignedOut: false });
+
+  if (!isLoaded) {
+    return <AuthLoadingScreen />;
+  }
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="(auth)" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="(app)" />
+    </Stack>
+  );
+}
 
 export default function RootLayout() {
   return (
-    <AppProviders>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(public)" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(onboarding)" />
-        <Stack.Screen name="(app)" />
-      </Stack>
-    </AppProviders>
+    <ClerkProvider
+      publishableKey={env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      tokenCache={tokenCache}
+      appearance={clerkAppearance}
+    >
+      <SafeAreaProvider>
+        <RootNavigator />
+      </SafeAreaProvider>
+    </ClerkProvider>
   );
 }

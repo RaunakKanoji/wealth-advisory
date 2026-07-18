@@ -8,9 +8,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.wealth-advisory"
     },
     "android": {
+      "package": "com.anonymous.wealthadvisory",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE"
       },
@@ -29,6 +31,14 @@
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      "expo-secure-store",
+      [
+        "@clerk/expo",
+        {
+          "appleSignIn": false,
+          "theme": "./clerk-theme.json"
         }
       ]
     ],

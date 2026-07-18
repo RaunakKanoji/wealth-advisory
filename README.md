@@ -38,15 +38,31 @@ Start the Expo development server:
 pnpm dev
 ```
 
-Then press `a` for Android, `i` for iOS, or `w` for web, or open the printed
-URL in Expo Go.
+Clerk's native authentication UI requires a development build; Expo Go and
+web are not authentication targets for this app.
+
+## Running authentication locally
+
+Authentication uses Clerk's native Expo components and requires a
+**development build**. Expo Go is not supported for the authentication UI.
+
+1. Copy `apps/banking/.env.example` to `apps/banking/.env.local` and set
+   `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`.
+2. In Clerk Dashboard, enable Native API and enable email address + password
+   authentication for the selected application.
+3. Install dependencies from the repository root with `pnpm install`.
+4. Launch from `apps/banking` with `npx expo run:ios` or
+   `npx expo run:android`.
+
+Sign-in and sign-up both render `AuthView` inside the app. Clerk's token cache
+uses secure storage so the session survives app restarts; root protected
+routes remove auth screens after sign-in and protected screens after sign-out.
 
 Platform shortcuts are also available from the root:
 
 ```bash
 pnpm android
 pnpm ios
-pnpm web
 ```
 
 ## Quality checks
