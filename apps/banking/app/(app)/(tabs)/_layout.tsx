@@ -16,7 +16,9 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: true,
-        header: () => <AppHeader unreadCount={0} />,
+        header: ({ route }) => (
+          <AppHeader unreadCount={0} sourceRoute={route.name} />
+        ),
         tabBarActiveTintColor: ACTIVE_COLOR,
         tabBarInactiveTintColor: INACTIVE_COLOR,
         tabBarHideOnKeyboard: true,
