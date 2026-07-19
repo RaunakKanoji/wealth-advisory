@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type AppHeaderProps = {
+  sourceRoute?: string;
   unreadCount?: number;
   onNotificationPress?: () => void;
   onProfilePress?: () => void;
@@ -54,6 +55,7 @@ function getInitials(
 }
 
 export function AppHeader({
+  sourceRoute,
   unreadCount = 0,
   onNotificationPress,
   onProfilePress,
@@ -131,7 +133,18 @@ export function AppHeader({
     if (onProfilePress) {
       onProfilePress();
     } else {
-      router.push("/(app)/profile");
+      const returnTo = sourceRoute === "accounts"
+        ? "/(app)/(tabs)/accounts"
+        : sourceRoute === "coach"
+          ? "/(app)/(tabs)/coach"
+          : sourceRoute === "more"
+            ? "/(app)/(tabs)/more"
+            : "/(app)/(tabs)";
+
+      router.push({
+        pathname: "/(app)/profile",
+        params: { returnTo },
+      });
     }
   };
 
