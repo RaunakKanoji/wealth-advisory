@@ -34,6 +34,7 @@ export default function AppLayout() {
       <Stack.Screen name="cards/[cardId]" options={{ headerShown: false }} />
       <Stack.Screen name="cards/transaction/[transactionId]" options={{ headerShown: false }} />
       <Stack.Screen name="coach" options={{ headerShown: false }} />
+      <Stack.Screen name="coach/history" options={{ headerShown: false }} />
       <Stack.Screen name="transfer" options={{ headerShown: false }} />
       <Stack.Screen name="transfers/index" options={{ headerShown: false }} />
       <Stack.Screen name="transfers/new" options={{ headerShown: false }} />
