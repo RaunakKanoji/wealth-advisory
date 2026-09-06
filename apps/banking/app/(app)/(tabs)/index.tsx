@@ -1,5 +1,5 @@
 import { useUser } from "@clerk/expo";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -20,14 +20,15 @@ import QuickActions from "@/components/home/quick-actions";
 // import TotalBalanceCard from "@/components/home/total-balance-card";
 import WealthCoachCard from "@/components/home/wealth-coach-card";
 import {
-  demoAccounts,
-  demoActivities,
   demoInsight,
 } from "@/data/home-demo-data";
-import { BankAccount, BankingActivity, WealthInsight } from "@/types/banking";
+import { DEMO_CUSTOMER_A } from "@/data/accounts-demo-data";
+import { getAccounts, getRecentActivities } from "@/services/accounts-service";
+import type { BankAccount, BankingActivity, WealthInsight } from "@/types/banking";
 
 export default function HomeScreen() {
   const { user, isLoaded: isUserLoaded } = useUser();
+  const customerId = user?.id ?? DEMO_CUSTOMER_A;
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
@@ -67,25 +68,30 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // Simulate data fetching
-  const loadData = () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(false);
-    setTimeout(() => {
-      // Set loaded demo data
-      setAccounts(demoAccounts);
-      setActivities(demoActivities);
+    try {
+      const [nextAccounts, nextActivities] = await Promise.all([
+        getAccounts({ customerId }),
+        getRecentActivities({ customerId }),
+      ]);
+      setAccounts(nextAccounts);
+      setActivities(nextActivities);
       setInsight(demoInsight);
       setLoading(false);
-    }, 1200);
-  };
+    } catch {
+      setError(true);
+      setLoading(false);
+    }
+  }, [customerId]);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    void loadData();
+  }, [loadData]);
 
   const handleRetry = () => {
-    loadData();
+    void loadData();
   };
 
 

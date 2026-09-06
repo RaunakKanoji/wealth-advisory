@@ -44,14 +44,21 @@ export function AccountListItem({
   const { width } = useWindowDimensions();
   const isSmall = width < 375;
   const icon = getAccountIcon(account.type);
-  const statusText = account.maturityDate
-    ? formatMaturityDate(account.maturityDate)
-    : "Available";
+  const isDeposit = account.type === "fixed-deposit" || account.type === "recurring-deposit";
+  const accountLabel = account.nickname || account.name;
+  const balanceLabel = account.availableBalanceMinorUnits !== undefined
+    ? "Available balance"
+    : account.type === "fixed-deposit"
+      ? "Principal"
+      : isDeposit
+        ? "Reported balance"
+        : "Reported balance";
+  const statusText = account.status === "active" ? "Active" : account.status;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Open ${account.name} ending in ${account.lastFour}`}
+      accessibilityLabel={`Open ${accountLabel} ending in ${account.lastFour}`}
       accessibilityHint="Opens account details"
       onPress={onPress}
       style={({ pressed }) => [
@@ -73,18 +80,28 @@ export function AccountListItem({
       </View>
 
       <View style={styles.nameColumn}>
-        <Text
-          numberOfLines={1}
-          style={[styles.accountName, isSmall && styles.accountNameSmall]}
-        >
-          {account.name}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text
+            numberOfLines={2}
+            style={[styles.accountName, isSmall && styles.accountNameSmall]}
+          >
+            {accountLabel}
+          </Text>
+          {account.isPrimary ? (
+            <View style={styles.primaryBadge}>
+              <Text style={styles.primaryBadgeText}>Primary</Text>
+            </View>
+          ) : null}
+        </View>
         <Text
           accessibilityLabel={`Account ending in ${account.lastFour}`}
           numberOfLines={1}
           style={styles.maskedNumber}
         >
           •••• {account.lastFour}
+        </Text>
+        <Text numberOfLines={1} style={styles.productType}>
+          {account.name}
         </Text>
       </View>
 
@@ -95,17 +112,27 @@ export function AccountListItem({
           numberOfLines={1}
           style={[styles.amount, isSmall && styles.amountSmall]}
         >
-          {formatIndianCurrency(account.balance).replace("₹ ", "₹")}
+          {formatIndianCurrency(
+            account.availableBalance ?? account.balance,
+          ).replace("₹ ", "₹")}
         </Text>
         <Text
           numberOfLines={1}
           style={[
             styles.status,
-            account.maturityDate ? styles.maturityStatus : styles.availableStatus,
+            account.status === "active" ? styles.availableStatus : styles.maturityStatus,
           ]}
         >
           {statusText}
         </Text>
+        <Text numberOfLines={1} style={styles.balanceLabel}>
+          {balanceLabel}
+        </Text>
+        {account.maturityDate ? (
+          <Text numberOfLines={1} style={styles.maturityDate}>
+            {formatMaturityDate(account.maturityDate)}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.chevronTarget}>
@@ -140,6 +167,7 @@ const styles = StyleSheet.create({
     marginLeft: 14,
   },
   accountName: {
+    flex: 1,
     color: accountColors.textPrimary,
     fontSize: 16,
     lineHeight: 22,
@@ -148,12 +176,35 @@ const styles = StyleSheet.create({
   accountNameSmall: {
     fontSize: 15,
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 6,
+  },
+  primaryBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 7,
+    backgroundColor: accountColors.brandGreenSoft,
+  },
+  primaryBadgeText: {
+    color: accountColors.brandGreenDark,
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: "700",
+  },
   maskedNumber: {
     marginTop: 2,
     color: "#9CA3AF",
     fontSize: 14,
     lineHeight: 19,
     fontWeight: "400",
+  },
+  productType: {
+    marginTop: 1,
+    color: accountColors.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
   },
   amountColumn: {
     width: 126,
@@ -179,6 +230,22 @@ const styles = StyleSheet.create({
     marginTop: 3,
     fontSize: 13,
     lineHeight: 18,
+    textAlign: "right",
+  },
+  balanceLabel: {
+    width: "100%",
+    marginTop: 1,
+    color: accountColors.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: "right",
+  },
+  maturityDate: {
+    width: "100%",
+    marginTop: 1,
+    color: accountColors.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
     textAlign: "right",
   },
   availableStatus: {

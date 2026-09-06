@@ -10,9 +10,10 @@ import { coachColors } from "./tokens";
 type CoachFlowScreenProps = {
   title: string;
   description: string;
+  contextNote?: string;
 };
 
-export function CoachFlowScreen({ title, description }: CoachFlowScreenProps) {
+export function CoachFlowScreen({ title, description, contextNote }: CoachFlowScreenProps) {
   const router = useRouter();
 
   return (
@@ -36,6 +37,7 @@ export function CoachFlowScreen({ title, description }: CoachFlowScreenProps) {
             {title}
           </Text>
           <Text style={styles.description}>{description}</Text>
+          {contextNote ? <Text style={styles.contextNote}>{contextNote}</Text> : null}
         </View>
       </View>
     </ScreenContainer>
@@ -94,6 +96,17 @@ const styles = StyleSheet.create({
     color: coachColors.textSecondary,
     fontSize: 16,
     lineHeight: 24,
+    textAlign: "center",
+  },
+  contextNote: {
+    marginTop: 18,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: coachColors.brandGreenSoft,
+    color: coachColors.brandGreen,
+    fontSize: 13,
+    lineHeight: 19,
     textAlign: "center",
   },
   pressed: {

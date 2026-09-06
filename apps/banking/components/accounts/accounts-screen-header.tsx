@@ -11,31 +11,47 @@ import {
 import { accountColors } from "./tokens";
 
 type AccountsScreenHeaderProps = {
-  onAddPress: () => void;
+  accountCount: number;
+  lastUpdated?: string;
+  isRefreshing: boolean;
+  onRefresh: () => void;
 };
 
 export function AccountsScreenHeader({
-  onAddPress,
+  accountCount,
+  lastUpdated,
+  isRefreshing,
+  onRefresh,
 }: AccountsScreenHeaderProps) {
   const { width } = useWindowDimensions();
   const isSmall = width < 375;
 
   return (
     <View style={styles.container}>
-      <Text
-        accessibilityRole="header"
-        style={[styles.title, isSmall && styles.titleSmall]}
-      >
-        My Accounts
-      </Text>
+      <View style={styles.titleColumn}>
+        <Text
+          accessibilityRole="header"
+          style={[styles.title, isSmall && styles.titleSmall]}
+        >
+          My Accounts
+        </Text>
+        <Text style={styles.subtitle}>
+          {accountCount} {accountCount === 1 ? "account" : "accounts"} linked
+          {lastUpdated ? ` · Updated ${lastUpdated}` : ""}
+        </Text>
+      </View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Add an account"
-        accessibilityHint="Opens the account application flow"
-        onPress={onAddPress}
-        style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+        accessibilityLabel={isRefreshing ? "Refreshing accounts" : "Refresh accounts"}
+        accessibilityState={{ busy: isRefreshing }}
+        onPress={onRefresh}
+        style={({ pressed }) => [styles.refreshButton, pressed && styles.pressed]}
       >
-        <Ionicons name="add" size={29} color="#4B5563" />
+        <Ionicons
+          name="refresh-outline"
+          size={22}
+          color={isRefreshing ? "#A3ABB7" : "#4B5563"}
+        />
       </Pressable>
     </View>
   );
@@ -48,6 +64,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 24,
   },
+  titleColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
   title: {
     color: accountColors.textPrimary,
     fontSize: 30,
@@ -58,7 +78,13 @@ const styles = StyleSheet.create({
     fontSize: 27,
     lineHeight: 34,
   },
-  addButton: {
+  subtitle: {
+    marginTop: 3,
+    color: accountColors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  refreshButton: {
     width: 48,
     height: 48,
     borderRadius: 15,

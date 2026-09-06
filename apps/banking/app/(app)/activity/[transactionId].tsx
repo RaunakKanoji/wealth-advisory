@@ -1,42 +1,7 @@
 import React from "react";
-import { StyleSheet, Text, View, Button } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import { ScreenContainer } from "@/components/screen-container";
 
-export default function TransactionDetailsScreen() {
-  const router = useRouter();
-  const { transactionId } = useLocalSearchParams();
+import { TransactionDetailsScreen } from "@/components/accounts/transaction-details-screen";
 
-  return (
-    <ScreenContainer edges={["top"]} backgroundColor="#FFFFFF">
-      <View style={styles.container}>
-        <Text style={styles.title}>Transaction Details</Text>
-        <Text style={styles.description}>
-          Showing details for transaction: {transactionId}
-        </Text>
-        <Button title="Go Back" color="#00866A" onPress={() => router.back()} />
-      </View>
-    </ScreenContainer>
-  );
+export default function TransactionDetailsRoute() {
+  return <TransactionDetailsScreen />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  description: {
-    fontSize: 16,
-    color: "#4B5563",
-    textAlign: "center",
-    marginBottom: 32,
-  },
-});

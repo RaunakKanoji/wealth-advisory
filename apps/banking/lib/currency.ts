@@ -45,6 +45,23 @@ export function formatIndianCurrencyWithoutSpace(value: number): string {
   return formatIndianCurrency(value, { showDecimals: false }).replace("₹ ", "₹");
 }
 
+/** Formats an exact paise amount without doing ledger arithmetic in floats. */
+export function formatIndianMinorUnits(
+  minorUnits: number,
+  options?: { showSign?: boolean },
+): string {
+  const majorUnits = Math.abs(minorUnits) / 100;
+  const formatted = formatIndianCurrency(majorUnits, {
+    showSign: options?.showSign && minorUnits > 0,
+  });
+
+  if (minorUnits < 0) {
+    return formatted.replace("₹ ", "-₹ ");
+  }
+
+  return formatted;
+}
+
 export function formatIndianCurrencyShort(value: number): string {
   const absValue = Math.abs(value);
   const sign = value < 0 ? "-" : "";

@@ -15,10 +15,10 @@ export default function ActivityCard({ activities }: ActivityCardProps) {
     router.push("/(app)/activity");
   };
 
-  const handleActivityRowPress = (id: string) => {
+  const handleActivityRowPress = (id: string, accountId?: string) => {
     router.push({
       pathname: "/(app)/activity/[transactionId]",
-      params: { transactionId: id },
+      params: { transactionId: id, ...(accountId ? { accountId } : {}) },
     });
   };
 
@@ -54,7 +54,7 @@ export default function ActivityCard({ activities }: ActivityCardProps) {
             <React.Fragment key={activity.id}>
               <ActivityRow
                 activity={activity}
-                onPress={() => handleActivityRowPress(activity.id)}
+                onPress={() => handleActivityRowPress(activity.id, activity.accountId)}
               />
               {/* Optional thin divider between rows (not after the last item) */}
               {index < activities.length - 1 && <View style={styles.divider} />}
