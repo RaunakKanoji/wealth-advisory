@@ -9,15 +9,17 @@ import { accountColors } from "./tokens";
 type AccountsListCardProps = {
   accounts: BankAccount[];
   onAccountPress: (account: BankAccount) => void;
+  title?: string;
 };
 
 export function AccountsListCard({
   accounts,
   onAccountPress,
+  title = "Accounts",
 }: AccountsListCardProps) {
   return (
     <View>
-      <Text style={styles.title}>All Accounts ({accounts.length})</Text>
+      <Text style={styles.title}>{title} ({accounts.length})</Text>
       <View style={styles.card}>
         {accounts.map((account, index) => (
           <AccountListItem

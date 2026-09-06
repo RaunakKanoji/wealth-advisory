@@ -1,12 +1,20 @@
 import React from "react";
-
-import { AccountActionScreen } from "@/components/accounts/account-action-screen";
+import { Redirect, useLocalSearchParams } from "expo-router";
 
 export default function AccountDetailsRoute() {
+  const { accountId } = useLocalSearchParams<{ accountId?: string | string[] }>();
+  const selectedAccountId = Array.isArray(accountId) ? accountId[0] : accountId;
+
+  if (!selectedAccountId) {
+    return <Redirect href="/(app)/(tabs)/accounts" />;
+  }
+
   return (
-    <AccountActionScreen
-      title="Account Details"
-      description="Review account information and available services."
+    <Redirect
+      href={{
+        pathname: "/(app)/accounts/[accountId]",
+        params: { accountId: selectedAccountId, section: "details" },
+      }}
     />
   );
 }

@@ -1,7 +1,6 @@
 import {
   formatIndianCurrency,
   formatIndianCurrencyShort,
-  formatIndianCurrencyWithoutSpace,
 } from "./currency";
 
 describe("currency utilities", () => {

@@ -1,4 +1,5 @@
 export { AccountCarousel } from "./account-carousel";
+export { AccountDetailsScreen } from "./account-details-screen";
 export { AccountPagination } from "./account-pagination";
 export { AccountQuickActions } from "./account-quick-actions";
 export { AccountsListCard } from "./accounts-list-card";
@@ -6,3 +7,5 @@ export { AccountsScreenHeader } from "./accounts-screen-header";
 export { AccountsSkeletons } from "./accounts-skeletons";
 export { OpenAccountCard } from "./open-account-card";
 export { TotalBalanceSummary } from "./total-balance-summary";
+export { TransactionDetailsScreen } from "./transaction-details-screen";
+export { TransactionRow } from "./transaction-row";
