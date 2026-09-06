@@ -35,13 +35,13 @@ describe("accounts service", () => {
       pageSize: 3,
     });
 
-    expect(page.totalItems).toBe(12);
-    expect(page.totalPages).toBe(4);
+    expect(page.totalItems).toBe(18);
+    expect(page.totalPages).toBe(6);
     expect(page.items).toHaveLength(3);
-    expect(page.summary.includedTransactionCount).toBe(10);
+    expect(page.summary.includedTransactionCount).toBe(16);
     expect(page.summary.moneyInMinorUnits).toBe(17_166_500);
-    expect(page.summary.moneyOutMinorUnits).toBe(3_788_900);
-    expect(page.summary.netMovementMinorUnits).toBe(13_377_600);
+    expect(page.summary.moneyOutMinorUnits).toBe(6_488_900);
+    expect(page.summary.netMovementMinorUnits).toBe(10_677_600);
   });
 
   it("searches the complete account dataset and has deterministic paging", async () => {
@@ -99,7 +99,7 @@ describe("accounts service", () => {
     );
 
     expect(result.filename).toBe("idbi-savings-primary-transactions.csv");
-    expect(result.rowCount).toBe(6);
+    expect(result.rowCount).toBe(9);
     expect(result.csv).toContain("Demo transaction summary — not an official bank statement.");
     expect(result.csv).toContain("Amazon India");
     expect(result.csv).not.toContain("Private note");
