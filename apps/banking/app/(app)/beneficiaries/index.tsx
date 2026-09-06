@@ -1,12 +1,7 @@
 import React from "react";
 
-import { MoreDestinationScreen } from "@/components/more/action-destination-screen";
+import { BeneficiariesScreen } from "@/components/transfers/beneficiaries-screen";
 
-export default function BeneficiariesScreen() {
-  return (
-    <MoreDestinationScreen
-      title="Beneficiaries"
-      description="Manage the beneficiaries connected to your banking profile."
-    />
-  );
+export default function BeneficiariesRoute() {
+  return <BeneficiariesScreen />;
 }
