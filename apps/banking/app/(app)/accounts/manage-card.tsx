@@ -1,12 +1,7 @@
 import React from "react";
 
-import { AccountActionScreen } from "@/components/accounts/account-action-screen";
+import { CardsOverviewScreen } from "@/components/cards/cards-screen";
 
 export default function ManageCardScreen() {
-  return (
-    <AccountActionScreen
-      title="Manage Card"
-      description="View and manage the cards linked to this account."
-    />
-  );
+  return <CardsOverviewScreen />;
 }

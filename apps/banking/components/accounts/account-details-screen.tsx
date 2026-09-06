@@ -444,6 +444,26 @@ export function AccountDetailsScreen() {
 
         <View style={styles.actionRow}>
           <ActionButton icon="create-outline" label="Nickname" onPress={openPreferenceModal} />
+          {account.status === "active" && ["savings", "current", "salary"].includes(account.type) ? (
+            <ActionButton
+              icon="arrow-up"
+              label="Transfer"
+              onPress={() => router.push({
+                pathname: "/(app)/transfer",
+                params: { fromAccountId: account.id },
+              })}
+            />
+          ) : null}
+          {account.capabilities.canManageCard ? (
+            <ActionButton
+              icon="card-outline"
+              label="Manage card"
+              onPress={() => router.push({
+                pathname: "/(app)/accounts/manage-card",
+                params: { accountId: account.id },
+              })}
+            />
+          ) : null}
           {account.capabilities.canSetPrimary && !account.isPrimary ? (
             <ActionButton icon="star-outline" label="Set primary" onPress={() => void setPrimary()} />
           ) : null}

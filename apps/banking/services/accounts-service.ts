@@ -10,6 +10,11 @@ import {
   getDemoCustomerFixture,
 } from "@/data/accounts-demo-data";
 import { formatIndianMinorUnits } from "@/lib/currency";
+import { getDemoPaymentActivities } from "@/services/demo-payment-ledger";
+import {
+  getDemoTransferBalanceAdjustments,
+  getDemoTransferLedgerTransactions,
+} from "@/services/demo-transfer-ledger";
 import type {
   AccountTransaction,
   BankAccount,
@@ -271,9 +276,29 @@ export async function getAccounts(options?: { customerId?: string | null; signal
   assertNotAborted(options?.signal);
   const fixture = getDemoCustomerFixture(getFixtureCustomerId(options?.customerId));
   const preferences = await loadPreferences(options?.customerId);
+  const adjustments = await getDemoTransferBalanceAdjustments(getCustomerScope(options?.customerId));
   assertNotAborted(options?.signal);
 
-  return applyAccountPreferences(fixture.accounts, preferences);
+  return applyAccountPreferences(fixture.accounts, preferences).map((account) => {
+    const adjustment = adjustments[account.id] ?? 0;
+    if (adjustment === 0) return account;
+    const balanceMinorUnits = account.balanceMinorUnits + adjustment;
+    const availableBalanceMinorUnits = account.availableBalanceMinorUnits === undefined
+      ? undefined
+      : account.availableBalanceMinorUnits + adjustment;
+    const ledgerBalanceMinorUnits = account.ledgerBalanceMinorUnits === undefined
+      ? undefined
+      : account.ledgerBalanceMinorUnits + adjustment;
+    return {
+      ...account,
+      balanceMinorUnits,
+      balance: balanceMinorUnits / 100,
+      availableBalanceMinorUnits,
+      availableBalance: availableBalanceMinorUnits === undefined ? undefined : availableBalanceMinorUnits / 100,
+      ledgerBalanceMinorUnits,
+      ledgerBalance: ledgerBalanceMinorUnits === undefined ? undefined : ledgerBalanceMinorUnits / 100,
+    };
+  });
 }
 
 export async function getAccount(
@@ -506,6 +531,7 @@ async function getFilteredTransactions(
   const normalizedFilters = normalizeTransactionFilters(filters);
   const preferences = await loadPreferences(options?.customerId);
   const fixture = getDemoCustomerFixture(getFixtureCustomerId(options?.customerId));
+  const ledgerTransactions = await getDemoTransferLedgerTransactions(getCustomerScope(options?.customerId), account.id);
   const transactions = fixture.transactions
     .filter((transaction) => transaction.accountId === account.id)
     .map((transaction) => ({
@@ -515,7 +541,7 @@ async function getFilteredTransactions(
 
   assertNotAborted(options?.signal);
   const matchingTransactions = sortTransactions(
-    transactions.filter((transaction) => matchesTransaction(transaction, normalizedFilters)),
+    [...transactions, ...ledgerTransactions].filter((transaction) => matchesTransaction(transaction, normalizedFilters)),
   );
 
   return { matchingTransactions, normalizedFilters };
@@ -568,10 +594,15 @@ export async function getTransaction(
   const transaction = fixture.transactions.find(
     (item) => item.id === transactionId && item.accountId === account.id,
   );
+  const ledgerTransaction = transaction
+    ? undefined
+    : (await getDemoTransferLedgerTransactions(getCustomerScope(options?.customerId), account.id)).find(
+        (item) => item.id === transactionId,
+      );
 
   return transaction
     ? { ...transaction, annotation: preferences.annotations[transaction.id] }
-    : undefined;
+    : ledgerTransaction;
 }
 
 export async function getRecentActivities(options?: { customerId?: string | null }) {
@@ -579,10 +610,9 @@ export async function getRecentActivities(options?: { customerId?: string | null
   const accountIds = new Set(accounts.map((account) => account.id));
   const fixture = getDemoCustomerFixture(getFixtureCustomerId(options?.customerId));
 
-  return sortTransactions(
+  const fixtureActivities = sortTransactions(
     fixture.transactions.filter((transaction) => accountIds.has(transaction.accountId)),
   )
-    .slice(0, 4)
     .map((transaction) => ({
       id: transaction.id,
       accountId: transaction.accountId,
@@ -593,6 +623,25 @@ export async function getRecentActivities(options?: { customerId?: string | null
       direction: transaction.direction,
       category: transaction.originalCategory,
     }));
+
+  const ledgerActivities = (await Promise.all(
+    accounts.map((account) => getDemoTransferLedgerTransactions(getCustomerScope(options?.customerId), account.id)),
+  ))
+    .flat()
+    .map((transaction) => ({
+      id: transaction.id,
+      accountId: transaction.accountId,
+      title: transaction.counterparty ?? transaction.description,
+      timestamp: `${transaction.transactionDate}${transaction.transactionTime ? `, ${transaction.transactionTime}` : ""}`,
+      amount: transaction.amountMinorUnits / 100,
+      amountMinorUnits: transaction.amountMinorUnits,
+      direction: transaction.direction,
+      category: transaction.originalCategory,
+    }));
+
+  return [...getDemoPaymentActivities(getCustomerScope(options?.customerId)), ...ledgerActivities, ...fixtureActivities]
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+    .slice(0, 4);
 }
 
 export async function updateTransactionAnnotation(

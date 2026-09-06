@@ -1,8 +1,10 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useUser } from "@clerk/expo";
 import { useRouter } from "expo-router";
 import React from "react";
 import {
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -128,15 +130,26 @@ export default function MoreScreen() {
             },
           ]}
         >
-          <Text
-            accessibilityRole="header"
-            style={[
-              styles.pageTitle,
-              isSmallScreen && styles.smallPageTitle,
-            ]}
-          >
-            More Actions
-          </Text>
+          <View style={styles.titleRow}>
+            <Text
+              accessibilityRole="header"
+              style={[
+                styles.pageTitle,
+                isSmallScreen && styles.smallPageTitle,
+              ]}
+            >
+              More Actions
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Browse all services"
+              onPress={() => router.push("/(app)/services")}
+              style={({ pressed }) => [styles.browseButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="grid-outline" size={17} color={moreColors.brandGreenDark} />
+              <Text style={styles.browseButtonText}>All Services</Text>
+            </Pressable>
+          </View>
 
           <ProfileSummaryCard
             isLoaded={isLoaded}
@@ -188,7 +201,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   pageTitle: {
-    marginBottom: 18,
+    marginBottom: 0,
     color: moreColors.textPrimary,
     fontSize: 30,
     lineHeight: 38,
@@ -197,6 +210,30 @@ const styles = StyleSheet.create({
   smallPageTitle: {
     fontSize: 27,
     lineHeight: 34,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 18,
+  },
+  browseButton: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: moreColors.brandGreenSoft,
+  },
+  browseButtonText: {
+    color: moreColors.brandGreenDark,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  pressed: {
+    opacity: 0.72,
   },
   prioritySection: {
     marginTop: 18,
