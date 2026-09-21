@@ -16,6 +16,7 @@ import {
   getCards,
 } from "@/services/cards-service";
 import { formatIndianMinorUnits } from "@/lib/currency";
+import { generateCoachModelText } from "@/services/wealth-coach-model-service";
 import type { AccountTransaction, TransactionCategory, TransactionStatus } from "@/types/banking";
 import type { CardTransaction } from "@/types/cards";
 import type {
@@ -25,7 +26,6 @@ import type {
   CoachConversation,
   CoachConversationContext,
   CoachMessage,
-  CoachModelStatus,
   CoachPeriod,
   CoachRun,
   CoachScope,
@@ -41,7 +41,6 @@ const STORAGE_PREFIX = "idbi-wealth-coach.v1";
 const STORAGE_CHUNK_SIZE = 1700;
 const DEMO_DATA_AS_OF = DEMO_SCENARIO_DATE;
 const CALCULATION_VERSION = "coach-calculation.v1";
-const MODEL_STATUS: CoachModelStatus = "test-adapter";
 const MAX_MESSAGE_LENGTH = 1_200;
 const MAX_CONVERSATIONS = 40;
 
@@ -67,6 +66,7 @@ type SubmitCoachMessageOptions = {
   conversationId: string;
   text: string;
   signal?: AbortSignal;
+  authToken?: string | null;
   onStateChange?: RunStateCallback;
   onRunCreated?: RunCreatedCallback;
 };
@@ -494,6 +494,7 @@ export async function submitCoachMessage(options: SubmitCoachMessageOptions): Pr
     userMessage,
     run,
     signal: options.signal,
+    authToken: options.authToken,
     onStateChange: options.onStateChange,
     onRunCreated: options.onRunCreated,
   });
@@ -503,7 +504,7 @@ export async function submitCoachMessage(options: SubmitCoachMessageOptions): Pr
 export async function retryCoachMessage(
   conversationId: string,
   userMessageId: string,
-  options?: { customerId?: string | null; signal?: AbortSignal; onStateChange?: RunStateCallback; onRunCreated?: RunCreatedCallback },
+  options?: { customerId?: string | null; signal?: AbortSignal; authToken?: string | null; onStateChange?: RunStateCallback; onRunCreated?: RunCreatedCallback },
 ): Promise<CoachMessageResult> {
   const scopedCustomerId = customerScope(options?.customerId);
   const state = await loadState(scopedCustomerId);
@@ -534,6 +535,7 @@ export async function retryCoachMessage(
     userMessage,
     run,
     signal: options?.signal,
+    authToken: options?.authToken,
     onStateChange: options?.onStateChange,
     onRunCreated: options?.onRunCreated,
   });
@@ -546,6 +548,7 @@ type ProcessRunInput = {
   userMessage: CoachMessage;
   run: CoachRun;
   signal?: AbortSignal;
+  authToken?: string | null;
   onStateChange?: RunStateCallback;
   onRunCreated?: RunCreatedCallback;
 };
@@ -605,11 +608,17 @@ async function processCoachRun(input: ProcessRunInput): Promise<CoachMessageResu
     await yieldToRuntime();
     assertNotAborted(signal);
 
-    const generatedText = await testCoachModel.generate({
-      question: input.userMessage.content,
-      explanation: analysis.explanation,
-      modelStatus: MODEL_STATUS,
-    });
+    const generation = await generateCoachModelText(
+      {
+        question: input.userMessage.content,
+        explanation: analysis.explanation,
+      },
+      {
+        authToken: input.authToken,
+        signal,
+      },
+    );
+    const generatedText = generation.text;
     const assistantMessageId = createId("message");
     const answer: CoachAnswer = {
       schemaVersion: "coach-answer.v1",
@@ -632,7 +641,7 @@ async function processCoachRun(input: ProcessRunInput): Promise<CoachMessageResu
         ...analysis.limitations,
       ],
       suggestedFollowUps: analysis.suggestedFollowUps,
-      modelStatus: MODEL_STATUS,
+      modelStatus: generation.modelStatus,
       dataEnvironment: "Demo data",
     };
     validateAnswer(answer);
@@ -1177,14 +1186,6 @@ function validateAnswer(answer: CoachAnswer): void {
     if (block.type === "transactionList" && block.items.some((item) => !sourceIds.has(item.sourceReferenceId))) throw new Error("Coach response referenced an unknown transaction source");
   }
 }
-
-const testCoachModel = {
-  async generate(input: { question: string; explanation: string; modelStatus: CoachModelStatus }): Promise<string> {
-    void input.question;
-    void input.modelStatus;
-    return input.explanation;
-  },
-};
 
 export async function saveCoachGoal(
   customerId: string | null | undefined,
