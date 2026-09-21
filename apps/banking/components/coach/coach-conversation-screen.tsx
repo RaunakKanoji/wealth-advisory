@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useUser } from "@clerk/expo";
+import { useAuth, useUser } from "@clerk/expo";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -60,6 +60,7 @@ const progressLabels: Record<string, string> = {
 
 export function CoachConversationScreen({ conversationId, scopeInput }: CoachConversationScreenProps) {
   const router = useRouter();
+  const { getToken } = useAuth();
   const { user } = useUser();
   const customerId = user?.id ?? DEMO_CUSTOMER_A;
   const [conversation, setConversation] = useState<CoachConversation | null>(null);
@@ -125,10 +126,12 @@ export function CoachConversationScreen({ conversationId, scopeInput }: CoachCon
     setError(undefined);
     setInput("");
     try {
+      const authToken = await getToken();
       const result = await submitCoachMessage({
         customerId,
         conversationId: conversation.id,
         text,
+        authToken,
         onRunCreated: setActiveRunId,
         onStateChange: setRunState,
       });
@@ -145,7 +148,7 @@ export function CoachConversationScreen({ conversationId, scopeInput }: CoachCon
       setSending(false);
       setActiveRunId(undefined);
     }
-  }, [conversation, customerId, input, sending]);
+  }, [conversation, customerId, getToken, input, sending]);
 
   const reviewConsent = useCallback(async (nextStatus: Exclude<CoachConsentStatus, "not-requested">) => {
     setConsent(nextStatus);
@@ -155,8 +158,10 @@ export function CoachConversationScreen({ conversationId, scopeInput }: CoachCon
       setSending(true);
       setError(undefined);
       try {
+        const authToken = await getToken();
         const result = await retryCoachMessage(conversation.id, pendingConsentMessageId, {
           customerId,
+          authToken,
           onRunCreated: setActiveRunId,
           onStateChange: setRunState,
         });
@@ -169,7 +174,7 @@ export function CoachConversationScreen({ conversationId, scopeInput }: CoachCon
         setPendingConsentMessageId(undefined);
       }
     }
-  }, [conversation, customerId, pendingConsentMessageId]);
+  }, [conversation, customerId, getToken, pendingConsentMessageId]);
 
   const stop = useCallback(async () => {
     if (!conversation || !activeRunId) return;
@@ -190,8 +195,10 @@ export function CoachConversationScreen({ conversationId, scopeInput }: CoachCon
     setSending(true);
     setError(undefined);
     try {
+      const authToken = await getToken();
       const result = await retryCoachMessage(conversation.id, messageId, {
         customerId,
+        authToken,
         onRunCreated: setActiveRunId,
         onStateChange: setRunState,
       });
@@ -202,7 +209,7 @@ export function CoachConversationScreen({ conversationId, scopeInput }: CoachCon
       setSending(false);
       setActiveRunId(undefined);
     }
-  }, [conversation, customerId, sending]);
+  }, [conversation, customerId, getToken, sending]);
 
   const openSource = useCallback((source: CoachSourceReference) => {
     setSourceAnswer(undefined);
@@ -279,7 +286,7 @@ export function CoachConversationScreen({ conversationId, scopeInput }: CoachCon
             </Pressable>
             <View style={styles.headerMain}>
               <CoachAvatar working={sending} />
-              <View style={styles.headerText}><Text style={styles.headerTitle}>Wealth Coach</Text><Text style={styles.headerSubtitle}>{sending ? "Working with selected data" : "Demo adapter · Demo data"}</Text></View>
+              <View style={styles.headerText}><Text style={styles.headerTitle}>Wealth Coach</Text><Text style={styles.headerSubtitle}>{sending ? "Working with selected data" : "AI-assisted · verified banking data"}</Text></View>
               <View style={styles.headerActions}>
                 <Pressable accessibilityRole="button" accessibilityLabel="Start new Coach conversation" onPress={() => router.push("/(app)/coach/new")} style={styles.iconButton}><Ionicons name="add" size={22} color={coachColors.brandGreen} /></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="Open Coach conversation history" onPress={() => router.push("/(app)/coach/history")} style={styles.iconButton}><Ionicons name="time-outline" size={21} color={coachColors.brandGreen} /></Pressable>
