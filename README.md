@@ -16,6 +16,27 @@
 
 There is no separate hosted web URL configured in this repository. The browser experience is available through the local Expo web target.
 
+## App Screenshots
+
+These screenshots were captured from the working self-contained iOS Simulator build using the deterministic synthetic demo dataset. The complete interactive experience is available here:
+
+[Launch the complete working app in Appetize →](https://appetize.io/app/b_cyha5ltvmdh75x6brldhdghz4y)
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/home.png" alt="IDBI Wealth Copilot Home screen" width="240"></td>
+    <td><img src="docs/screenshots/accounts.png" alt="IDBI Wealth Copilot Accounts screen" width="240"></td>
+    <td><img src="docs/screenshots/wealth-coach.png" alt="IDBI Wealth Copilot Wealth Coach screen" width="240"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Home</strong><br>Balances, shortcuts, and demo data</td>
+    <td align="center"><strong>Accounts</strong><br>Balances, deposits, and account actions</td>
+    <td align="center"><strong>Wealth Coach</strong><br>Questions, insights, and guidance</td>
+  </tr>
+</table>
+
+The full app also includes Activity, Cards, Transfers, QR payments, Notifications, Goals, Insights, Services, Profile, and support flows. See the [demo readiness guide](apps/banking/docs/DEMO_READINESS.md) for the recommended end-to-end navigation path.
+
 ## Overview
 
 Wealth Copilot is a mobile-first banking and wealth intelligence experience for IDBI customers. It brings balances, linked accounts, cards, transactions, goals, financial insights, and an AI Wealth Coach into one place so users can move from raw financial activity to a clearer understanding of their money.
