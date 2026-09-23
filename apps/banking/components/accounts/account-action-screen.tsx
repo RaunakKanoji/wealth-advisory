@@ -1,11 +1,18 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { useUser } from "@clerk/expo";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { demoAccounts } from "@/data/accounts-demo-data";
-import { formatIndianCurrency } from "@/lib/currency";
+import { PrivateAmount } from "@/components/accounts/private-amount";
+import { useBalanceVisibility } from "@/components/accounts/use-balance-visibility";
+import { StateCard } from "@/components/design-system";
 import { ScreenContainer } from "@/components/screen-container";
+import { DEMO_CUSTOMER_A } from "@/data/accounts-demo-data";
+import { useFinancialData } from "@/lib/api/hooks";
+import { isRemoteDataEnabled } from "@/lib/env";
+import { getAccountsOverview } from "@/services/accounts-service";
+import type { AccountsOverview } from "@/types/banking";
 
 import { accountColors } from "./tokens";
 
@@ -29,31 +36,96 @@ export function AccountActionScreen({
   allowAccountSelection = false,
 }: AccountActionScreenProps) {
   const router = useRouter();
+  const { user, isLoaded: isUserLoaded } = useUser();
   const { accountId: rawAccountId } = useLocalSearchParams<{
     accountId?: string | string[];
   }>();
   const accountId = getAccountId(rawAccountId);
+  const customerId = user?.id ?? DEMO_CUSTOMER_A;
+  const shouldLoadAccounts = allowAccountSelection || Boolean(accountId);
+  const remoteAccounts = useFinancialData(shouldLoadAccounts);
+  const [localOverview, setLocalOverview] = useState<AccountsOverview | null>(null);
+  const [localOverviewCustomerId, setLocalOverviewCustomerId] = useState(customerId);
+  const [localIsLoading, setLocalIsLoading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [localReloadKey, setLocalReloadKey] = useState(0);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState(
     allowAccountSelection ? accountId ?? ALL_ACCOUNTS_ID : accountId,
   );
-  const selectedAccount = demoAccounts.find(
-    (item) => item.id === selectedAccountId,
+  const { balanceVisible, isBalanceVisibilityHydrated } = useBalanceVisibility(customerId, isUserLoaded);
+
+  useEffect(() => {
+    setSelectedAccountId(allowAccountSelection ? accountId ?? ALL_ACCOUNTS_ID : accountId);
+    setIsAccountMenuOpen(false);
+  }, [accountId, allowAccountSelection]);
+
+  useEffect(() => {
+    if (isRemoteDataEnabled || !shouldLoadAccounts || !isUserLoaded) return;
+    let active = true;
+    setLocalIsLoading(true);
+    setLocalError(null);
+    void getAccountsOverview({ customerId })
+      .then((nextOverview) => {
+        if (active) {
+          setLocalOverview(nextOverview);
+          setLocalOverviewCustomerId(customerId);
+        }
+      })
+      .catch(() => {
+        if (active) setLocalError("Account information is temporarily unavailable.");
+      })
+      .finally(() => {
+        if (active) setLocalIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [customerId, isUserLoaded, localReloadKey, shouldLoadAccounts]);
+
+  const currentLocalOverview = localOverviewCustomerId === customerId ? localOverview : null;
+  const overview = isRemoteDataEnabled ? remoteAccounts.overview : currentLocalOverview;
+  const accounts = overview?.accounts ?? [];
+  const selectedAccount = accounts.find((item) => item.id === selectedAccountId);
+  const selectionUnavailable = Boolean(
+    selectedAccountId && selectedAccountId !== ALL_ACCOUNTS_ID && !selectedAccount,
   );
-  const allAccountsBalance = useMemo(
-    () => demoAccounts.reduce((sum, item) => sum + item.balance, 0),
-    [],
+  const isLoadingAccounts = shouldLoadAccounts && (isRemoteDataEnabled
+    ? remoteAccounts.isLoading && !remoteAccounts.overview
+    : (!isUserLoaded || localIsLoading || localOverviewCustomerId !== customerId) && !currentLocalOverview);
+  const accountsError = isRemoteDataEnabled
+    ? remoteAccounts.error instanceof Error
+      ? remoteAccounts.error.message
+      : remoteAccounts.error
+        ? "Account information is temporarily unavailable."
+        : null
+    : localError;
+  const showAccountSummary = Boolean(overview) && (
+    allowAccountSelection || Boolean(selectedAccount) || selectionUnavailable
   );
-  const showAccountSummary = allowAccountSelection || Boolean(selectedAccount);
-  const summaryName = selectedAccount?.name ?? "All Accounts";
+  const summaryName = selectedAccount?.displayName
+    ?? (selectedAccountId === ALL_ACCOUNTS_ID ? "All accounts" : "Account unavailable");
   const summaryNumber = selectedAccount
     ? `Account ending in ${selectedAccount.lastFour}`
-    : `${demoAccounts.length} linked accounts`;
-  const summaryBalance = selectedAccount?.balance ?? allAccountsBalance;
+    : selectedAccountId === ALL_ACCOUNTS_ID
+      ? `${overview?.summary.accountCount ?? 0} linked accounts`
+      : "This account is not available for the signed-in customer";
+  const summaryBalanceMinorUnits = selectedAccount?.mainBalanceMinorUnits
+    ?? (selectedAccountId === ALL_ACCOUNTS_ID
+      ? overview?.summary.totalBalanceMinorUnits ?? null
+      : null);
 
   const selectAccount = (nextAccountId: string) => {
     setSelectedAccountId(nextAccountId);
     setIsAccountMenuOpen(false);
+  };
+
+  const retryAccounts = () => {
+    if (isRemoteDataEnabled) {
+      void remoteAccounts.refetch();
+    } else {
+      setLocalReloadKey((value) => value + 1);
+    }
   };
 
   return (
@@ -78,84 +150,107 @@ export function AccountActionScreen({
             {title}
           </Text>
           <Text style={styles.description}>{description}</Text>
-          {allowAccountSelection ? (
-            <View style={styles.selectorSection}>
-              <Text style={styles.selectorLabel}>Show statements for</Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Select account. Currently ${summaryName}`}
-                accessibilityState={{ expanded: isAccountMenuOpen }}
-                onPress={() => setIsAccountMenuOpen((open) => !open)}
-                style={({ pressed }) => [
-                  styles.selectorButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <View style={styles.selectorTextColumn}>
-                  <Text style={styles.selectorValue}>{summaryName}</Text>
-                  <Text style={styles.selectorSubtext}>{summaryNumber}</Text>
-                </View>
-                <Ionicons
-                  name={isAccountMenuOpen ? "chevron-up" : "chevron-down"}
-                  size={20}
-                  color={accountColors.textSecondary}
-                />
-              </Pressable>
-
-              {isAccountMenuOpen ? (
-                <View style={styles.accountOptions}>
+          {isLoadingAccounts ? (
+            <View accessible accessibilityLabel="Loading linked accounts" style={styles.loadingAccounts}>
+              <Text style={styles.loadingAccountsText}>Loading linked accounts…</Text>
+            </View>
+          ) : accountsError && !overview ? (
+            <StateCard
+              actionLabel="Retry"
+              compact
+              description={accountsError}
+              onAction={retryAccounts}
+              style={styles.accountsState}
+              title="Accounts unavailable"
+            />
+          ) : overview && allowAccountSelection && accounts.length === 0 ? (
+            <StateCard
+              compact
+              description="Link a bank account before requesting statements."
+              style={styles.accountsState}
+              title="No linked accounts"
+            />
+          ) : (
+            <>
+              {allowAccountSelection ? (
+                <View style={styles.selectorSection}>
+                  <Text style={styles.selectorLabel}>Show statements for</Text>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Show statements for all accounts"
-                    accessibilityState={{
-                      selected: selectedAccountId === ALL_ACCOUNTS_ID,
-                    }}
-                    onPress={() => selectAccount(ALL_ACCOUNTS_ID)}
+                    accessibilityLabel={`Select account. Currently ${summaryName}`}
+                    accessibilityState={{ expanded: isAccountMenuOpen }}
+                    onPress={() => setIsAccountMenuOpen((open) => !open)}
                     style={({ pressed }) => [
-                      styles.accountOption,
-                      selectedAccountId === ALL_ACCOUNTS_ID &&
-                        styles.selectedAccountOption,
+                      styles.selectorButton,
                       pressed && styles.pressed,
                     ]}
                   >
-                    <Text style={styles.accountOptionText}>All Accounts</Text>
-                    <Text style={styles.accountOptionSubtext}>
-                      {demoAccounts.length} linked accounts
-                    </Text>
+                    <View style={styles.selectorTextColumn}>
+                      <Text style={styles.selectorValue}>{summaryName}</Text>
+                      <Text style={styles.selectorSubtext}>{summaryNumber}</Text>
+                    </View>
+                    <Ionicons
+                      name={isAccountMenuOpen ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color={accountColors.textSecondary}
+                    />
                   </Pressable>
-                  {demoAccounts.map((item) => (
-                    <Pressable
-                      key={item.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Show statements for ${item.name}`}
-                      accessibilityState={{ selected: item.id === selectedAccountId }}
-                      onPress={() => selectAccount(item.id)}
-                      style={({ pressed }) => [
-                        styles.accountOption,
-                        item.id === selectedAccountId &&
-                          styles.selectedAccountOption,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text style={styles.accountOptionText}>{item.name}</Text>
-                      <Text style={styles.accountOptionSubtext}>
-                        Account ending in {item.lastFour}
-                      </Text>
-                    </Pressable>
-                  ))}
+
+                  {isAccountMenuOpen ? (
+                    <View style={styles.accountOptions}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Show statements for all accounts"
+                        accessibilityState={{ selected: selectedAccountId === ALL_ACCOUNTS_ID }}
+                        onPress={() => selectAccount(ALL_ACCOUNTS_ID)}
+                        style={({ pressed }) => [
+                          styles.accountOption,
+                          selectedAccountId === ALL_ACCOUNTS_ID && styles.selectedAccountOption,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.accountOptionText}>All accounts</Text>
+                        <Text style={styles.accountOptionSubtext}>
+                          {overview?.summary.accountCount ?? 0} linked accounts
+                        </Text>
+                      </Pressable>
+                      {accounts.map((item) => (
+                        <Pressable
+                          key={item.id}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Show statements for ${item.displayName}`}
+                          accessibilityState={{ selected: item.id === selectedAccountId }}
+                          onPress={() => selectAccount(item.id)}
+                          style={({ pressed }) => [
+                            styles.accountOption,
+                            item.id === selectedAccountId && styles.selectedAccountOption,
+                            pressed && styles.pressed,
+                          ]}
+                        >
+                          <Text style={styles.accountOptionText}>{item.displayName}</Text>
+                          <Text style={styles.accountOptionSubtext}>
+                            Account ending in {item.lastFour}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
                 </View>
               ) : null}
-            </View>
-          ) : null}
-          {showAccountSummary ? (
-            <View style={styles.accountSummary}>
-              <Text style={styles.accountName}>{summaryName}</Text>
-              <Text style={styles.accountNumber}>{summaryNumber}</Text>
-              <Text style={styles.accountBalance}>
-                {formatIndianCurrency(summaryBalance)}
-              </Text>
-            </View>
-          ) : null}
+              {showAccountSummary ? (
+                <View style={styles.accountSummary}>
+                  <Text style={styles.accountName}>{summaryName}</Text>
+                  <Text style={styles.accountNumber}>{summaryNumber}</Text>
+                  <PrivateAmount
+                    amountMinorUnits={summaryBalanceMinorUnits}
+                    unavailableLabel="Balance unavailable"
+                    visible={isBalanceVisibilityHydrated && balanceVisible}
+                    style={styles.accountBalance}
+                  />
+                </View>
+              ) : null}
+            </>
+          )}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={actionLabel}
@@ -213,6 +308,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
   },
+  loadingAccounts: {
+    minHeight: 96,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 20,
+    borderRadius: 16,
+    backgroundColor: accountColors.background,
+  },
+  loadingAccountsText: {
+    color: accountColors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  accountsState: {
+    marginTop: 20,
+  },
   selectorSection: {
     marginTop: 24,
   },
@@ -230,7 +341,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 14,
-    backgroundColor: "#F7F8FA",
+    backgroundColor: accountColors.background,
     borderWidth: 1,
     borderColor: accountColors.border,
   },
@@ -252,7 +363,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     overflow: "hidden",
     borderRadius: 14,
-    backgroundColor: "#F7F8FA",
+    backgroundColor: accountColors.background,
     borderWidth: 1,
     borderColor: accountColors.border,
   },

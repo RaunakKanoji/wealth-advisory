@@ -2,7 +2,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { formatIndianCurrency } from "@/lib/currency";
+import { formatINR } from "@/lib/currency";
 import type { BankAccount } from "@/types/banking";
 
 import { accountColors } from "./tokens";
@@ -19,7 +19,7 @@ export function FeaturedAccountCard({
   onPress,
 }: FeaturedAccountCardProps) {
   const isSmall = width < 330;
-  const formattedBalance = formatIndianCurrency(
+  const formattedBalance = formatINR(
     account.availableBalance ?? account.balance,
   );
   const balanceFontSize = Math.max(

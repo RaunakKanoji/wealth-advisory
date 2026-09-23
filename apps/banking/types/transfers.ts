@@ -2,7 +2,7 @@ import type { BankAccount, PaymentChannel, TransactionStatus } from "@/types/ban
 
 export type TransferDestinationType = "own-account" | "bank-account" | "upi";
 export type TransferMethod = "internal" | "within-bank" | "imps" | "neft" | "upi";
-export type TransferEnvironment = "Demo data";
+export type TransferEnvironment = string;
 export type BeneficiaryType = "bank-account" | "upi";
 export type BeneficiaryStatus =
   | "draft"

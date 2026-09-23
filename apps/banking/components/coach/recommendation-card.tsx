@@ -1,5 +1,4 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -12,95 +11,34 @@ type RecommendationCardProps = {
   onPress: () => void;
 };
 
-function RecommendationIcon({ category }: { category: CoachRecommendation["category"] }) {
-  if (category === "investment") {
-    return <Ionicons name="trending-up-outline" size={25} color={coachColors.brandGreen} />;
-  }
-
-  if (category === "insurance") {
-    return (
-      <MaterialCommunityIcons
-        name="shield-outline"
-        size={26}
-        color={coachColors.brandGreen}
-      />
-    );
-  }
-
-  if (category === "emergency-fund") {
-    return (
-      <MaterialCommunityIcons name="umbrella-outline" size={26} color={coachColors.brandGreen} />
-    );
-  }
-
-  if (category === "retirement") {
-    return <MaterialCommunityIcons name="target" size={26} color={coachColors.brandGreen} />;
-  }
-
-  return <MaterialCommunityIcons name="calculator-variant-outline" size={26} color={coachColors.brandGreen} />;
-}
-
 export function RecommendationCard({ recommendation, onPress }: RecommendationCardProps) {
+  const icon = recommendation.category === "emergency-fund" ? "umbrella-outline" : "trending-up-outline";
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={
-        recommendation.category === "insurance"
-          ? "Explore Health Insurance"
-          : recommendation.category === "emergency-fund"
-            ? "Build an Emergency Fund"
-            : recommendation.title
-      }
+      accessibilityLabel={`${recommendation.title}. ${recommendation.reason}`}
       accessibilityHint="Opens this Wealth Coach recommendation"
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
-      <View style={styles.iconContainer}>
-        <RecommendationIcon category={recommendation.category} />
+      <View style={styles.row}>
+        <View style={styles.iconContainer}><Ionicons name={icon} size={24} color={coachColors.brandGreen} /></View>
+        <View style={styles.copy}>
+          <Text numberOfLines={2} style={styles.title}>{recommendation.title}</Text>
+          <Text numberOfLines={3} style={styles.description}>{recommendation.description}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={coachColors.iconMuted} />
       </View>
-      <Text style={styles.title} numberOfLines={3}>
-        {recommendation.title}
-      </Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    width: 154,
-    minHeight: 182,
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-    marginRight: 14,
-    borderRadius: 22,
-    backgroundColor: coachColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: coachColors.border,
-    shadowColor: coachColors.textPrimary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  iconContainer: {
-    width: 56,
-    height: 56,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 28,
-    backgroundColor: "#E6F3EF",
-  },
-  title: {
-    flex: 1,
-    marginTop: 18,
-    color: coachColors.textPrimary,
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  pressed: {
-    opacity: 0.78,
-  },
+  card: { marginTop: 12, padding: 18, borderRadius: 22, backgroundColor: coachColors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: coachColors.border },
+  row: { flexDirection: "row", alignItems: "center" },
+  iconContainer: { width: 52, height: 52, alignItems: "center", justifyContent: "center", borderRadius: 26, backgroundColor: coachColors.brandGreenSoft },
+  copy: { flex: 1, minWidth: 0, marginHorizontal: 13 },
+  title: { color: coachColors.textPrimary, fontSize: 17, lineHeight: 23, fontWeight: "700" },
+  description: { marginTop: 5, color: coachColors.textSecondary, fontSize: 14, lineHeight: 19 },
+  pressed: { opacity: 0.78 },
 });

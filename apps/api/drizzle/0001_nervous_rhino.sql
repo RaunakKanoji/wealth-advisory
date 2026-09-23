@@ -1,0 +1,1 @@
+ALTER TABLE "account_balances" ADD COLUMN "holds" numeric(18, 2) DEFAULT '0.00' NOT NULL;

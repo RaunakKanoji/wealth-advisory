@@ -2,9 +2,10 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { formatIndianMinorUnits } from "@/lib/currency";
+import { formatTransactionAmount } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
 import type { AccountTransaction, TransactionCategory } from "@/types/banking";
+import { accountColors } from "./tokens";
 
 type TransactionRowProps = {
   transaction: AccountTransaction;
@@ -29,7 +30,7 @@ const categoryLabels: Record<TransactionCategory, string> = {
   salary: "Salary",
   shopping: "Shopping",
   food: "Food",
-  bill: "Bill",
+  bill: "Bills",
   transfer: "Transfer",
   refund: "Refund",
   cash: "Cash",
@@ -46,9 +47,7 @@ export function TransactionRow({
   const isCredit = transaction.direction === "credit";
   const title = transaction.counterparty ?? transaction.description;
   const directionText = isCredit ? "Credit" : "Debit";
-  const amountText = isBalanceVisible
-    ? `${isCredit ? "+" : "−"}${formatIndianMinorUnits(transaction.amountMinorUnits)}`
-    : "Amount hidden";
+  const amountText = isBalanceVisible ? formatTransactionAmount(transaction.amountMinorUnits, isCredit ? "credit" : "debit") : "Amount hidden";
 
   return (
     <Pressable
@@ -62,7 +61,7 @@ export function TransactionRow({
         <Ionicons
           name={categoryIcon[transaction.annotation?.category ?? transaction.originalCategory]}
           size={21}
-          color={isCredit ? "#007E5D" : "#6B7280"}
+          color={isCredit ? accountColors.brandGreen : accountColors.textSecondary}
         />
       </View>
 
@@ -80,7 +79,7 @@ export function TransactionRow({
           {transaction.status !== "posted" ? (
             <View style={[styles.statusPill, transaction.status === "failed" && styles.failedPill]}>
               <Text style={[styles.statusText, transaction.status === "failed" && styles.failedText]}>
-                {transaction.status}
+                {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
               </Text>
             </View>
           ) : null}
@@ -118,10 +117,10 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   creditIcon: {
-    backgroundColor: "#E6F3EF",
+    backgroundColor: accountColors.brandGreenSoft,
   },
   debitIcon: {
-    backgroundColor: "#F2F3F5",
+    backgroundColor: accountColors.surfaceMuted,
   },
   content: {
     flex: 1,
@@ -130,14 +129,14 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   title: {
-    color: "#111827",
+    color: accountColors.textPrimary,
     fontSize: 15,
     lineHeight: 20,
     fontWeight: "600",
   },
   meta: {
     marginTop: 3,
-    color: "#7B8492",
+    color: accountColors.textSecondary,
     fontSize: 12,
     lineHeight: 17,
   },
@@ -149,7 +148,7 @@ const styles = StyleSheet.create({
     columnGap: 7,
   },
   category: {
-    color: "#687386",
+    color: accountColors.textSecondary,
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "600",
@@ -158,21 +157,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 7,
-    backgroundColor: "#FFF4D8",
+    backgroundColor: accountColors.brandOrangeSoft,
   },
   failedPill: {
-    backgroundColor: "#FDEBE8",
+    backgroundColor: accountColors.dangerSoft,
   },
   statusText: {
-    color: "#8A5A10",
+    color: accountColors.warning,
     fontSize: 11,
     fontWeight: "700",
     textTransform: "capitalize",
   },
   failedText: {
-    color: "#B93A2B",
+    color: accountColors.danger,
   },
   amountColumn: {
+    flexShrink: 0,
     minWidth: 96,
     alignItems: "flex-end",
     rowGap: 5,
@@ -184,9 +184,9 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   creditAmount: {
-    color: "#007E5D",
+    color: accountColors.brandGreen,
   },
   debitAmount: {
-    color: "#111827",
+    color: accountColors.danger,
   },
 });

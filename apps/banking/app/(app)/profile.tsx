@@ -11,6 +11,8 @@ import React from "react";
 import { StyleSheet } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { DemoProfileScreen } from "@/components/demo-profile-screen";
+import { useDemoSession } from "@/lib/demo-session";
 
 export default function NativeProfileScreen() {
   const router = useRouter();
@@ -20,6 +22,7 @@ export default function NativeProfileScreen() {
   }>();
   const isFocused = useIsFocused();
   const { isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { session } = useDemoSession();
   const hasDismissed = React.useRef(false);
 
   const pathnameRef = React.useRef(pathname);
@@ -52,6 +55,8 @@ export default function NativeProfileScreen() {
       router.replace("/(app)/(tabs)");
     }
   };
+
+  if (session) return <DemoProfileScreen />;
 
   return (
     <ScreenContainer edges={["top"]} backgroundColor="#FFFFFF">

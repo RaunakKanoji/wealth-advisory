@@ -2,6 +2,7 @@ import type { TransactionCategory, TransactionStatus } from "@/types/banking";
 
 export type CardProductKind = "debit" | "credit" | "unknown";
 export type CardFormFactor = "physical" | "virtual";
+export type CardSourceEnvironment = "Demo data" | "Bank API" | "Account Aggregator";
 export type CardLifecycleStatus =
   | "active"
   | "temporarily-disabled"
@@ -65,7 +66,7 @@ export type CreditFacilitySummary = {
 export type CardRecord = {
   id: string;
   providerReference: string;
-  sourceEnvironment: "Demo data";
+  sourceEnvironment: CardSourceEnvironment;
   productKind: CardProductKind;
   formFactor: CardFormFactor;
   productName: string;
@@ -118,8 +119,14 @@ export type CardTransaction = {
   originalCurrency?: string;
   postedAmountMinorUnits?: number;
   linkedTransactionId?: string;
+  /** Explicit account-feed relationship supplied by the source adapter. */
+  linkedAccountTransactionId?: string;
   associationKey?: string;
-  sourceEnvironment: "Demo data";
+  sourceEnvironment: CardSourceEnvironment;
+  annotation?: {
+    category?: TransactionCategory;
+    note?: string;
+  };
 };
 
 export type CardTransactionPeriod = "all" | "this-month" | "last-month";
@@ -172,7 +179,7 @@ export type CardControlOperation = {
   providerReference?: string;
   createdAt: string;
   updatedAt: string;
-  sourceEnvironment: "Demo data";
+  sourceEnvironment: CardSourceEnvironment;
 };
 
 export type CardServiceRequest = {
@@ -182,5 +189,5 @@ export type CardServiceRequest = {
   status: CardOperationStatus;
   reason?: "lost" | "stolen";
   createdAt: string;
-  sourceEnvironment: "Demo data";
+  sourceEnvironment: CardSourceEnvironment;
 };

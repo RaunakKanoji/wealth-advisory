@@ -1,7 +1,7 @@
 import React from "react";
 
-import { TransactionDetailsScreen } from "@/components/accounts/transaction-details-screen";
+import { TransactionActivityDetailsScreen } from "@/components/transactions/transaction-activity-details-screen";
 
 export default function TransactionDetailsRoute() {
-  return <TransactionDetailsScreen />;
+  return <TransactionActivityDetailsScreen />;
 }

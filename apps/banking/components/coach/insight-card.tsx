@@ -1,42 +1,20 @@
 import React, { type PropsWithChildren } from "react";
-import { Pressable, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
 
-import { coachColors } from "./tokens";
+import { Surface } from "@/components/design-system";
+import { appRadii } from "@/components/theme/tokens";
 
-type InsightCardProps = PropsWithChildren<{
-  accessibilityLabel: string;
-  onPress: () => void;
-}>;
+type InsightCardProps = PropsWithChildren;
 
-export function InsightCard({ children, accessibilityLabel, onPress }: InsightCardProps) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint="Opens this Wealth Coach insight"
-      onPress={onPress}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
-    >
-      {children}
-    </Pressable>
-  );
+export function InsightCard({ children }: InsightCardProps) {
+  return <Surface style={styles.card}>{children}</Surface>;
 }
 
 const styles = StyleSheet.create({
   card: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     paddingVertical: 20,
-    borderRadius: 22,
-    backgroundColor: coachColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: coachColors.border,
-    shadowColor: coachColors.textPrimary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 9,
-    elevation: 2,
-  },
-  pressed: {
-    opacity: 0.78,
+    overflow: "hidden",
+    borderRadius: appRadii.hero,
   },
 });

@@ -1,6 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useUser } from "@clerk/expo";
-import { useFocusEffect } from "@react-navigation/native";
+import { useAuth, useUser } from "@clerk/expo";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -15,7 +14,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PaymentCardPreview, cardStatusLabel } from "@/components/cards/payment-card-preview";
+import { appColors, appRadii, appShadows } from "@/components/theme/tokens";
 import { DEMO_CUSTOMER_A } from "@/data/accounts-demo-data";
+import { ApiError, apiErrorMessage } from "@/lib/api/client";
+import { isFinancialAuthReady, isRemoteDataEnabled } from "@/lib/env";
+import { useCards } from "@/lib/api/hooks";
+import { apiCardToCardRecord } from "@/lib/api/view-models";
 import { getCards } from "@/services/cards-service";
 import type { CardProductKind, CardRecord } from "@/types/cards";
 
@@ -27,61 +31,190 @@ const filters: { key: CardFilter; label: string }[] = [
   { key: "credit", label: "Credit" },
   { key: "virtual", label: "Virtual" },
 ];
+const noCards: CardRecord[] = [];
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function mapCardsError(caught: unknown): string {
+  if (caught instanceof ApiError) {
+    if (caught.status === 0) return "We couldn’t reach the banking service. Check your connection and try again.";
+    if (caught.status === 401 || caught.status === 403) return "Please sign in again to view your cards.";
+    if (caught.status === 503) return "Card information is temporarily unavailable. Please try again.";
+  }
+  return apiErrorMessage(caught, "card information");
 }
 
 export function CardsOverviewScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { user } = useUser();
+  const { user, isLoaded: isUserLoaded } = useUser();
+  const { isLoaded: isAuthLoaded, isSignedIn, userId: authCustomerId } = useAuth({ treatPendingAsSignedOut: false });
   const { accountId: rawAccountId } = useLocalSearchParams<{ accountId?: string | string[] }>();
   const accountId = firstParam(rawAccountId);
+  const remoteCards = useCards(accountId);
+  const { data: remoteData, error: remoteError, isLoading: remoteIsLoading, refetch: refetchRemoteCards } = remoteCards;
   const customerId = user?.id ?? DEMO_CUSTOMER_A;
-  const [cards, setCards] = useState<CardRecord[]>([]);
+  const hasCurrentRemoteIdentity = !isRemoteDataEnabled || (
+    isUserLoaded
+    && isFinancialAuthReady(isAuthLoaded, isSignedIn)
+    && (authCustomerId ?? DEMO_CUSTOMER_A) === customerId
+  );
+  const [cards, setCards] = useState<CardRecord[]>(() => remoteData?.cards.map(apiCardToCardRecord) ?? []);
   const [filter, setFilter] = useState<CardFilter>("all");
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(() => remoteData ? "ready" : "loading");
+  const [error, setError] = useState<string | null>(() => remoteError ? mapCardsError(remoteError) : null);
+  const [stateCustomerId, setStateCustomerId] = useState(customerId);
+  const [stateAccountId, setStateAccountId] = useState(accountId);
   const hasRedirected = useRef(false);
+  const requestGeneration = useRef(0);
+  const activeCustomerId = useRef(customerId);
+  const activeAuthCustomerId = useRef(authCustomerId);
+  const activeAccountId = useRef(accountId);
+  const cardsRef = useRef(cards);
+  const cardsOwnerRef = useRef({ customerId, accountId });
 
-  const loadCards = useCallback(async (quiet = false) => {
-    if (!quiet) setLoadState("loading");
-    setError(null);
-    try {
-      const nextCards = await getCards({ customerId, accountId });
-      setCards(nextCards);
-      setLoadState("ready");
-    } catch {
-      setLoadState("error");
-      setError("We couldn’t load your cards. Please try again.");
-    }
-  }, [accountId, customerId]);
+  if (activeCustomerId.current !== customerId || activeAuthCustomerId.current !== authCustomerId || activeAccountId.current !== accountId) {
+    activeCustomerId.current = customerId;
+    activeAuthCustomerId.current = authCustomerId;
+    activeAccountId.current = accountId;
+    requestGeneration.current += 1;
+  }
+  cardsRef.current = cards;
 
   useEffect(() => {
     hasRedirected.current = false;
+    setFilter("all");
+    cardsRef.current = [];
+    cardsOwnerRef.current = { customerId, accountId };
+    setCards([]);
+    setStateCustomerId(customerId);
+    setStateAccountId(accountId);
+    setLoadState("loading");
+    setError(null);
+  }, [accountId, customerId]);
+
+  const loadCards = useCallback(async (quiet = false) => {
+    if (!isUserLoaded) return;
+    if (isRemoteDataEnabled && !hasCurrentRemoteIdentity) return;
+
+    const requestedCustomerId = customerId;
+    const requestedAuthCustomerId = authCustomerId;
+    const requestedAccountId = accountId;
+    const currentRequest = ++requestGeneration.current;
+    const isActiveRequest = () => (
+      currentRequest === requestGeneration.current
+      && activeCustomerId.current === requestedCustomerId
+      && activeAuthCustomerId.current === requestedAuthCustomerId
+      && activeAccountId.current === requestedAccountId
+    );
+    const hasCachedCards = cardsOwnerRef.current.customerId === requestedCustomerId
+      && cardsOwnerRef.current.accountId === requestedAccountId
+      && cardsRef.current.length > 0;
+    const commit = (nextCards: CardRecord[], nextLoadState: "loading" | "ready" | "error", nextError: string | null) => {
+      if (!isActiveRequest()) return;
+      cardsRef.current = nextCards;
+      cardsOwnerRef.current = { customerId: requestedCustomerId, accountId: requestedAccountId };
+      setCards(nextCards);
+      setStateCustomerId(requestedCustomerId);
+      setStateAccountId(requestedAccountId);
+      setLoadState(nextLoadState);
+      setError(nextError);
+    };
+
+    if (!quiet && !hasCachedCards) {
+      commit([], "loading", null);
+    }
+
+    if (isRemoteDataEnabled) {
+      try {
+        const result = await refetchRemoteCards();
+        if (!isActiveRequest()) return;
+        if (result.error) throw result.error;
+        if (!result.data || !Array.isArray(result.data.cards)) throw new Error("Cards response was empty.");
+        commit(result.data.cards.map(apiCardToCardRecord), "ready", null);
+      } catch (caught) {
+        if (!isActiveRequest()) return;
+        commit(hasCachedCards ? cardsRef.current : [], hasCachedCards ? "ready" : "error", mapCardsError(caught));
+      }
+      return;
+    }
+
+    try {
+      const nextCards = await getCards({ customerId: requestedCustomerId, accountId: requestedAccountId });
+      commit(nextCards, "ready", null);
+    } catch (caught) {
+      if (!isActiveRequest()) return;
+      commit(hasCachedCards ? cardsRef.current : [], hasCachedCards ? "ready" : "error", mapCardsError(caught));
+    }
+  }, [accountId, authCustomerId, customerId, hasCurrentRemoteIdentity, isUserLoaded, refetchRemoteCards]);
+
+  useEffect(() => {
+    if (!isRemoteDataEnabled) return;
+    if (!hasCurrentRemoteIdentity) return;
+    if (activeCustomerId.current !== customerId || activeAccountId.current !== accountId) return;
+    const hasCachedCards = cardsOwnerRef.current.customerId === customerId
+      && cardsOwnerRef.current.accountId === accountId
+      && cardsRef.current.length > 0;
+    if (remoteData) {
+      const nextCards = remoteData.cards.map(apiCardToCardRecord);
+      cardsRef.current = nextCards;
+      cardsOwnerRef.current = { customerId, accountId };
+      setCards(nextCards);
+      setStateCustomerId(customerId);
+      setStateAccountId(accountId);
+      setLoadState("ready");
+      setError(remoteError ? mapCardsError(remoteError) : null);
+    } else if (remoteError) {
+      if (!hasCachedCards) {
+        cardsRef.current = [];
+        cardsOwnerRef.current = { customerId, accountId };
+        setCards([]);
+      }
+      setStateCustomerId(customerId);
+      setStateAccountId(accountId);
+      setLoadState(hasCachedCards ? "ready" : "error");
+      setError(mapCardsError(remoteError));
+    } else if (remoteIsLoading) {
+      if (!hasCachedCards) {
+        cardsRef.current = [];
+        cardsOwnerRef.current = { customerId, accountId };
+        setCards([]);
+        setStateCustomerId(customerId);
+        setStateAccountId(accountId);
+        setLoadState("loading");
+        setError(null);
+      }
+    }
+  }, [accountId, customerId, hasCurrentRemoteIdentity, remoteData, remoteError, remoteIsLoading]);
+
+  useEffect(() => {
+    if (isRemoteDataEnabled) return;
     void loadCards();
   }, [loadCards]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (loadState === "ready") void loadCards(true);
-    }, [loadCards, loadState]),
-  );
+  const isCurrentOwner = isUserLoaded
+    && hasCurrentRemoteIdentity
+    && stateCustomerId === customerId
+    && stateAccountId === accountId;
+  const renderedCards = isCurrentOwner ? cards : noCards;
+  const renderedLoadState = isCurrentOwner ? loadState : "loading";
+  const renderedError = isCurrentOwner ? error : null;
 
   useEffect(() => {
-    if (!accountId || loadState !== "ready" || cards.length !== 1 || hasRedirected.current) return;
+    if (!isCurrentOwner || !accountId || renderedLoadState !== "ready" || renderedCards.length !== 1 || hasRedirected.current) return;
     hasRedirected.current = true;
     router.replace({
       pathname: "/(app)/cards/[cardId]",
-      params: { cardId: cards[0].id, fromAccountId: accountId },
+      params: { cardId: renderedCards[0].id, fromAccountId: accountId },
     });
-  }, [accountId, cards, loadState, router]);
+  }, [accountId, isCurrentOwner, renderedCards, renderedLoadState, router]);
 
   const visibleCards = useMemo(
-    () => cards.filter((card) => filter === "all" || (filter === "virtual" ? card.formFactor === "virtual" : card.productKind === filter)),
-    [cards, filter],
+    () => renderedCards.filter((card) => filter === "all" || (filter === "virtual" ? card.formFactor === "virtual" : card.productKind === filter)),
+    [filter, renderedCards],
   );
 
   const goBack = () => {
@@ -101,7 +234,7 @@ export function CardsOverviewScreen() {
     <View style={styles.screen}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 32 + tabBarHeight }]}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12, paddingBottom: 32 + tabBarHeight }]}
       >
         <View style={[styles.content, { maxWidth: isTablet ? 760 : undefined, paddingHorizontal: horizontalPadding }]}>
           <View style={styles.headerRow}>
@@ -132,26 +265,27 @@ export function CardsOverviewScreen() {
                 Manage your debit, credit, and virtual cards in one place.
               </Text>
             </View>
-            {loadState === "ready" ? <Text style={styles.countLabel}>{cards.length} {cards.length === 1 ? "card" : "cards"}</Text> : null}
+            {renderedLoadState === "ready" ? <Text style={styles.countLabel}>{renderedCards.length} {renderedCards.length === 1 ? "card" : "cards"}</Text> : null}
           </View>
 
-          {loadState === "loading" ? (
+          {renderedLoadState === "loading" ? (
             <CardsLoading />
-          ) : loadState === "error" ? (
-            <StateCard title="Cards unavailable" description={error ?? "Please try again."} actionLabel="Retry" onAction={() => void loadCards()} />
-          ) : cards.length === 0 ? (
+          ) : renderedLoadState === "error" && renderedCards.length === 0 ? (
+            <StateCard title="Cards unavailable" description={renderedError ?? "Please try again."} actionLabel="Retry" onAction={() => void loadCards()} />
+          ) : renderedCards.length === 0 ? (
             <StateCard
-              title={accountId ? "No cards linked to this account" : "No cards are available for this profile"}
-              description={accountId ? "Choose another account to view its supported cards." : "No card records are currently available for this customer."}
+              title="No cards yet"
+              description={accountId ? "No cards are linked to this account yet." : "No card records are currently available for this customer."}
             />
           ) : (
             <>
+              {renderedError ? <Text style={styles.staleText} accessibilityRole="alert">{renderedError} Showing the last successful data.</Text> : null}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContent} style={styles.filterScroll}>
                 {filters.map((item) => {
                   const selected = item.key === filter;
                   const count = item.key === "all"
-                    ? cards.length
-                    : cards.filter((card) => item.key === "virtual" ? card.formFactor === "virtual" : card.productKind === item.key).length;
+                    ? renderedCards.length
+                    : renderedCards.filter((card) => item.key === "virtual" ? card.formFactor === "virtual" : card.productKind === item.key).length;
                   if (count === 0 && item.key !== "all") return null;
                   return (
                     <Pressable
@@ -204,7 +338,7 @@ export function CardsOverviewScreen() {
 
           <View style={styles.disclosure}>
             <Ionicons name="information-circle-outline" size={18} color={stylesTokens.brandGreenDark} />
-            <Text style={styles.disclosureText}>Demo card — changes affect this prototype only.</Text>
+            <Text style={styles.disclosureText}>{isRemoteDataEnabled ? "Card information is provided by the connected banking service." : "Demo card — changes affect this prototype only."}</Text>
           </View>
         </View>
       </ScrollView>
@@ -239,17 +373,17 @@ function StateCard({ title, description, actionLabel, onAction }: { title: strin
 }
 
 const stylesTokens = {
-  background: "#F7F8FA",
-  surface: "#FFFFFF",
-  textPrimary: "#111827",
-  textSecondary: "#6F7888",
-  textMuted: "#98A1AE",
-  brandGreen: "#007E5D",
-  brandGreenDark: "#006647",
-  brandGreenSoft: "#E9F5F2",
-  brandOrange: "#F45B2A",
-  brandOrangeSoft: "#FFF2EA",
-  border: "#E8EBEF",
+  background: appColors.background,
+  surface: appColors.surface,
+  textPrimary: appColors.textPrimary,
+  textSecondary: appColors.textSecondary,
+  textMuted: appColors.textMuted,
+  brandGreen: appColors.primary,
+  brandGreenDark: appColors.primaryPressed,
+  brandGreenSoft: appColors.primarySoft,
+  brandOrange: appColors.orangeAccent,
+  brandOrangeSoft: appColors.warningSoft,
+  border: appColors.border,
 };
 
 const styles = StyleSheet.create({
@@ -268,22 +402,23 @@ const styles = StyleSheet.create({
   countLabel: { marginLeft: 12, marginBottom: 3, color: stylesTokens.textMuted, fontSize: 14, fontWeight: "600" },
   filterScroll: { marginBottom: 18 },
   filterContent: { columnGap: 8 },
-  filterChip: { minHeight: 40, justifyContent: "center", paddingHorizontal: 14, borderRadius: 20, backgroundColor: stylesTokens.surface, borderWidth: 1, borderColor: stylesTokens.border },
+  filterChip: { minHeight: 44, justifyContent: "center", paddingHorizontal: 14, borderRadius: appRadii.round, backgroundColor: stylesTokens.surface, borderWidth: 1, borderColor: stylesTokens.border },
   filterChipSelected: { backgroundColor: stylesTokens.brandGreenSoft, borderColor: "#B8DED5" },
   filterText: { color: stylesTokens.textSecondary, fontSize: 13, fontWeight: "600" },
   filterTextSelected: { color: stylesTokens.brandGreenDark },
   cardList: { rowGap: 18 },
-  cardListItem: { borderRadius: 24, backgroundColor: stylesTokens.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: stylesTokens.border, padding: 12, shadowColor: "#111827", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  cardListItem: { borderRadius: appRadii.hero, backgroundColor: stylesTokens.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: stylesTokens.border, padding: 12, ...appShadows.surface },
   cardSummaryRow: { minHeight: 56, flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingTop: 10 },
   cardSummaryText: { flex: 1, minWidth: 0 },
   cardSummaryTitle: { color: stylesTokens.textPrimary, fontSize: 16, lineHeight: 22, fontWeight: "700" },
   cardSummaryDescription: { marginTop: 3, color: stylesTokens.textSecondary, fontSize: 13, lineHeight: 18 },
   disclosure: { flexDirection: "row", alignItems: "flex-start", marginTop: 22, padding: 13, borderRadius: 14, backgroundColor: stylesTokens.brandGreenSoft },
   disclosureText: { flex: 1, marginLeft: 9, color: stylesTokens.brandGreenDark, fontSize: 13, lineHeight: 19 },
-  stateCard: { alignItems: "center", marginTop: 10, padding: 26, borderRadius: 24, backgroundColor: stylesTokens.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: stylesTokens.border, shadowColor: "#111827", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  stateCard: { alignItems: "center", marginTop: 10, padding: 26, borderRadius: appRadii.hero, backgroundColor: stylesTokens.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: stylesTokens.border, ...appShadows.surface },
   stateIcon: { width: 58, height: 58, alignItems: "center", justifyContent: "center", borderRadius: 29, backgroundColor: stylesTokens.brandGreenSoft },
   stateTitle: { marginTop: 16, color: stylesTokens.textPrimary, fontSize: 19, lineHeight: 25, fontWeight: "700", textAlign: "center" },
   stateDescription: { maxWidth: 460, marginTop: 7, color: stylesTokens.textSecondary, fontSize: 14, lineHeight: 21, textAlign: "center" },
+  staleText: { marginBottom: 12, color: stylesTokens.brandOrange, fontSize: 12, lineHeight: 17 },
   primaryButton: { minHeight: 46, alignItems: "center", justifyContent: "center", marginTop: 20, paddingHorizontal: 24, borderRadius: 13, backgroundColor: stylesTokens.brandGreen },
   primaryButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
   loadingGroup: { rowGap: 12 },

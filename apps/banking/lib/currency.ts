@@ -1,48 +1,67 @@
+type CurrencyInput = number | string | null | undefined;
+
+/** Formats a value with the app-wide Indian Rupee display rule. */
+export function formatINR(value: CurrencyInput): string {
+  const numericValue = toFiniteNumber(value);
+  if (numericValue === null) return "—";
+  const sign = numericValue < 0 ? "-" : "";
+  return `${sign}₹${formatIndianNumber(Math.abs(numericValue))}`;
+}
+
+function formatINRWithSign(value: CurrencyInput, showSign = false): string {
+  const numericValue = toFiniteNumber(value);
+  if (numericValue === null) return "—";
+  if (numericValue < 0) return formatINR(numericValue);
+  return `${showSign && numericValue > 0 ? "+" : ""}${formatINR(numericValue)}`;
+}
+
+function toFiniteNumber(value: CurrencyInput): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function formatIndianNumber(value: number): string {
+  try {
+    return value.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  } catch {
+    const [whole, fraction] = value.toFixed(2).split(".");
+    const groupedWhole = whole.length > 3
+      ? `${whole.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ",")},${whole.slice(-3)}`
+      : whole;
+    return `${groupedWhole}.${fraction}`;
+  }
+}
+
 /**
- * Formats a number into Indian Rupee (INR) currency format.
- * Example: 100000 -> ₹ 1,00,000.00
+ * Legacy named export retained for callers that use the older utility name.
+ * `showDecimals` is ignored deliberately: financial displays always show two decimals.
  */
 export function formatIndianCurrency(
-  value: number,
+  value: CurrencyInput,
   options?: {
     showDecimals?: boolean;
     showSign?: boolean;
   }
 ): string {
-  const showDecimals = options?.showDecimals ?? true;
-  const showSign = options?.showSign ?? false;
-  
-  const absVal = Math.abs(value);
-  let result = "";
-
-  try {
-    const formatter = new Intl.NumberFormat("en-IN", {
-      minimumFractionDigits: showDecimals ? 2 : 0,
-      maximumFractionDigits: showDecimals ? 2 : 0,
-    });
-    result = formatter.format(absVal);
-  } catch {
-    // Fallback manual formatter for en-IN
-    const parts = absVal.toFixed(showDecimals ? 2 : 0).split(".");
-    let numStr = parts[0];
-    const decStr = parts[1] ? `.${parts[1]}` : "";
-    
-    // en-IN formatting (comma after last 3 digits, and then every 2 digits)
-    if (numStr.length > 3) {
-      let lastThree = numStr.substring(numStr.length - 3);
-      const otherNumbers = numStr.substring(0, numStr.length - 3);
-      result = otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + lastThree + decStr;
-    } else {
-      result = numStr + decStr;
-    }
-  }
-
-  const sign = value < 0 ? "-" : (showSign && value > 0 ? "+" : "");
-  return `${sign}₹ ${result}`;
+  return formatINRWithSign(value, options?.showSign);
 }
 
-export function formatIndianCurrencyWithoutSpace(value: number): string {
-  return formatIndianCurrency(value, { showDecimals: false }).replace("₹ ", "₹");
+export function formatIndianCurrencyWithoutSpace(value: CurrencyInput): string {
+  return formatINR(value);
+}
+
+/** Normalizes rupee amounts embedded in API prose without altering surrounding copy. */
+export function formatINRInText(value: string): string {
+  return value.replace(/₹\s*(-?\d[\d,]*(?:\.\d{1,2})?)/g, (match, rawAmount: string) => {
+    const amount = Number(rawAmount.replace(/,/g, ""));
+    if (!Number.isFinite(amount)) return match;
+    return formatINR(amount);
+  });
 }
 
 /** Formats an exact paise amount without doing ledger arithmetic in floats. */
@@ -50,41 +69,48 @@ export function formatIndianMinorUnits(
   minorUnits: number,
   options?: { showSign?: boolean },
 ): string {
-  const majorUnits = Math.abs(minorUnits) / 100;
-  const formatted = formatIndianCurrency(majorUnits, {
-    showSign: options?.showSign && minorUnits > 0,
-  });
+  const numericMinorUnits = toFiniteNumber(minorUnits);
+  if (numericMinorUnits === null) return "—";
+  return formatINRWithSign(numericMinorUnits / 100, options?.showSign);
+}
 
-  if (minorUnits < 0) {
-    return formatted.replace("₹ ", "-₹ ");
-  }
+/** Formats a transaction amount with one consistent sign and INR decimals. */
+export function formatTransactionAmount(
+  minorUnits: number,
+  direction: "credit" | "debit" | "transfer",
+): string {
+  const absoluteMinorUnits = Math.abs(minorUnits);
+  if (direction === "debit") return formatIndianMinorUnits(-absoluteMinorUnits);
+  if (direction === "credit") return formatIndianMinorUnits(absoluteMinorUnits, { showSign: true });
+  return formatIndianMinorUnits(absoluteMinorUnits);
+}
 
-  return formatted;
+/** Major-unit counterpart for legacy home activity records. */
+export function formatTransactionCurrency(
+  amount: number,
+  direction: "credit" | "debit" | "transfer",
+): string {
+  const absoluteAmount = Math.abs(amount);
+  if (direction === "debit") return formatIndianCurrency(-absoluteAmount);
+  if (direction === "credit") return formatIndianCurrency(absoluteAmount, { showSign: true });
+  return formatIndianCurrency(absoluteAmount);
 }
 
 export function formatIndianCurrencyShort(value: number): string {
-  const absValue = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-
-  if (absValue >= 10000000) {
-    return `${sign}₹${formatCompactUnit(absValue / 10000000)} crore`;
-  }
-
-  if (absValue >= 100000) {
-    return `${sign}₹${formatCompactUnit(absValue / 100000)} lakhs`;
-  }
-
-  return formatIndianCurrencyWithoutSpace(value);
+  return formatINR(value);
 }
 
-function formatCompactUnit(value: number): string {
-  try {
-    return new Intl.NumberFormat("en-IN", {
-      maximumFractionDigits: 1,
-    }).format(value);
-  } catch {
-    // Defensive fallback: round to at most 1 decimal digit without trailing zeros
-    const rounded = Math.round(value * 10) / 10;
-    return rounded.toString();
+/** Uses lakh/crore notation when a compact card summary is easier to scan. */
+export function formatCompactIndianCurrency(value: CurrencyInput): string {
+  const numericValue = toFiniteNumber(value);
+  if (numericValue === null) return "—";
+  const absoluteValue = Math.abs(numericValue);
+  const sign = numericValue < 0 ? "-" : "";
+  if (absoluteValue >= 10_000_000) {
+    return `${sign}₹${(absoluteValue / 10_000_000).toLocaleString("en-IN", { maximumFractionDigits: 1 })} crore`;
   }
+  if (absoluteValue >= 100_000) {
+    return `${sign}₹${(absoluteValue / 100_000).toLocaleString("en-IN", { maximumFractionDigits: 1 })} lakh`;
+  }
+  return formatINR(numericValue);
 }

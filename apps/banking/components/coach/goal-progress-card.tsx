@@ -1,9 +1,11 @@
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { formatIndianCurrencyShort } from "@/lib/currency";
+import { ProgressBar } from "@/components/design-system";
+import { formatCompactIndianCurrency } from "@/lib/currency";
 import { clampPercentage } from "@/lib/percentage";
+import { privacySafeFinancialText } from "@/lib/privacy";
 import type { FinancialGoal } from "@/types/wealth-coach";
 
 import { InsightCard } from "./insight-card";
@@ -12,100 +14,61 @@ import { coachColors } from "./tokens";
 type GoalProgressCardProps = {
   goal: FinancialGoal;
   onPress: () => void;
+  balanceVisible?: boolean;
 };
 
-export function GoalProgressCard({ goal, onPress }: GoalProgressCardProps) {
-  const progress = clampPercentage(goal.progressPercentage);
+export function GoalProgressCard({ goal, onPress, balanceVisible = true }: GoalProgressCardProps) {
+  const progress = clampPercentage(Number.isFinite(goal.progressPercentage) ? Math.round(goal.progressPercentage) : 0);
+  const goalName = balanceVisible ? goal.name : privacySafeFinancialText(goal.name, "Financial goal");
+  const remainingAmount = Math.max(Number.isFinite(goal.gapAmount) ? goal.gapAmount : goal.targetAmount - goal.currentAmount, 0);
 
   return (
-    <InsightCard
-      accessibilityLabel={`${goal.name} progress, ${progress}%`}
-      onPress={onPress}
-    >
-      <View style={styles.topRow}>
-        <View style={styles.iconContainer}>
-          <MaterialCommunityIcons name="target" size={26} color={coachColors.brandGreen} />
+    <InsightCard>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={balanceVisible ? `${goalName} progress, ${progress}%` : `${goalName}, financial values hidden`}
+        accessibilityHint="Opens this financial goal"
+        onPress={onPress}
+        style={({ pressed }) => [styles.main, pressed && styles.pressed]}
+      >
+        <View style={styles.headingRow}>
+          <View style={styles.iconContainer}><Ionicons name="flag-outline" size={27} color={coachColors.brandGreen} /></View>
+          <View style={styles.copy}>
+            <Text style={styles.title}>{goalName}</Text>
+            <Text style={styles.description}>
+              {balanceVisible
+                ? remainingAmount > 0 ? `${formatCompactIndianCurrency(remainingAmount)} remaining` : "Goal reached"
+                : "Open your goal to review your progress."}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={21} color={coachColors.iconMuted} />
         </View>
 
-        <View style={styles.copy}>
-          <Text style={styles.title}>{goal.name}</Text>
-          <Text style={styles.description}>
-            You&apos;re {formatIndianCurrencyShort(goal.gapAmount)} away from your goal.
-          </Text>
-        </View>
-
-      </View>
-
-      <View style={styles.progressRow}>
-        <View
-          accessible
-          accessibilityRole="progressbar"
-          accessibilityLabel={`${goal.name} progress`}
-          accessibilityValue={{ min: 0, max: 100, now: progress }}
-          style={styles.progressTrack}
-        >
-          <View style={[styles.progressFill, { width: `${progress}%` }]} />
-        </View>
-        <Text style={styles.progressValue}>{progress}%</Text>
-      </View>
+        {balanceVisible ? (
+          <View style={styles.progressRow}>
+            <ProgressBar
+              accessibilityLabel={`${goalName} progress`}
+              accessibilityValueText={`${progress}% complete`}
+              value={progress}
+              style={styles.progressTrack}
+            />
+            <Text style={styles.progressValue}>{progress}%</Text>
+          </View>
+        ) : null}
+      </Pressable>
     </InsightCard>
   );
 }
 
 const styles = StyleSheet.create({
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  iconContainer: {
-    width: 52,
-    height: 52,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 26,
-    backgroundColor: "#E6F3EF",
-  },
-  copy: {
-    flex: 1,
-    marginLeft: 14,
-    marginRight: 8,
-  },
-  title: {
-    color: coachColors.textPrimary,
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "700",
-  },
-  description: {
-    marginTop: 4,
-    color: "#747E8E",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  progressRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 14,
-    marginTop: 22,
-  },
-  progressTrack: {
-    flex: 1,
-    height: 9,
-    overflow: "hidden",
-    borderRadius: 5,
-    backgroundColor: coachColors.progressTrack,
-  },
-  progressFill: {
-    height: "100%",
-    borderRadius: 5,
-    backgroundColor: coachColors.brandGreen,
-  },
-  progressValue: {
-    minWidth: 36,
-    color: coachColors.textPrimary,
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: "700",
-    textAlign: "right",
-  },
+  main: { borderRadius: 16 },
+  headingRow: { flexDirection: "row", alignItems: "center" },
+  iconContainer: { width: 60, height: 60, alignItems: "center", justifyContent: "center", borderRadius: 30, backgroundColor: coachColors.brandGreenSoft },
+  copy: { flex: 1, minWidth: 0, marginHorizontal: 14 },
+  title: { color: coachColors.textPrimary, fontSize: 19, lineHeight: 25, fontWeight: "700" },
+  description: { marginTop: 6, color: coachColors.textSecondary, fontSize: 14, lineHeight: 19 },
+  progressRow: { flexDirection: "row", alignItems: "center", marginTop: 20 },
+  progressTrack: { flex: 1, height: 9, backgroundColor: coachColors.progressTrack },
+  progressValue: { width: 48, marginLeft: 12, color: coachColors.textPrimary, fontSize: 18, lineHeight: 23, fontWeight: "700", textAlign: "right" },
+  pressed: { opacity: 0.78 },
 });

@@ -14,6 +14,9 @@ import type {
   ServicePreferences,
   ServiceRecentItem,
 } from "@/types/services";
+import { apiRequest } from "@/lib/api/client";
+import { env, isRemoteDataEnabled } from "@/lib/env";
+import type { ApiService } from "@/lib/api/types";
 
 const DEFAULT_CUSTOMER_ID = "demo-customer-a";
 const DEFAULT_ENVIRONMENT = "demo";
@@ -159,6 +162,14 @@ export function searchServices(
 }
 
 export async function getServicePreferences(options?: { customerId?: string | null; environment?: string }): Promise<ServicePreferences> {
+  if (isRemoteDataEnabled) {
+    const services = await apiRequest<{ items: ApiService[] }>("/api/v1/services", { demoAuthId: remoteDemoAuthId(options?.customerId) });
+    return {
+      version: 1,
+      favouriteServiceIds: services.items.filter((service) => service.isFavorite).map((service) => localServiceId(service.slug)).filter(Boolean) as string[],
+      recentServices: [],
+    };
+  }
   const preferences = await loadPreferences(options?.customerId, options?.environment ?? DEFAULT_ENVIRONMENT);
   return {
     version: preferences.version,
@@ -175,6 +186,20 @@ export async function toggleFavourite(
   if (!service || !service.favouriteAllowed) throw new Error("This service cannot be saved as a favourite");
   const environment = options?.environment ?? DEFAULT_ENVIRONMENT;
   const customerId = customerScope(options?.customerId);
+  if (isRemoteDataEnabled) {
+    const services = await apiRequest<{ items: ApiService[] }>("/api/v1/services", { demoAuthId: remoteDemoAuthId(customerId) });
+    const remoteService = services.items.find((item) => localServiceId(item.slug) === serviceId);
+    if (!remoteService) throw new Error("This service is not available in the catalogue");
+    const isFavourite = remoteService.isFavorite;
+    if (!isFavourite && services.items.filter((item) => item.isFavorite).length >= MAX_FAVOURITES) {
+      throw new Error(`You can save up to ${MAX_FAVOURITES} favourites`);
+    }
+    await apiRequest(`/api/v1/services/${encodeURIComponent(remoteService.id)}/favorite`, {
+      method: isFavourite ? "DELETE" : "POST",
+      demoAuthId: remoteDemoAuthId(customerId),
+    });
+    return getServicePreferences({ customerId, environment });
+  }
   const preferences = await loadPreferences(customerId, environment);
   const isFavourite = preferences.favouriteServiceIds.includes(serviceId);
   if (!isFavourite && preferences.favouriteServiceIds.length >= MAX_FAVOURITES) {
@@ -210,12 +235,31 @@ export async function recordRecentService(
   if (!getServiceDefinition(serviceId)) throw new Error("Unknown service");
   const environment = options?.environment ?? DEFAULT_ENVIRONMENT;
   const customerId = customerScope(options?.customerId);
+  if (isRemoteDataEnabled) return getServicePreferences({ customerId, environment });
   const preferences = await loadPreferences(customerId, environment);
   const recentServices: ServiceRecentItem[] = [
     { serviceId, openedAt: options?.openedAt ?? new Date().toISOString() },
     ...preferences.recentServices.filter((item) => item.serviceId !== serviceId),
   ].slice(0, MAX_RECENT_SERVICES);
   return savePreferences(customerId, { ...preferences, recentServices }, environment);
+}
+
+function remoteDemoAuthId(customerId?: string | null): string | undefined {
+  if (env.EXPO_PUBLIC_APP_ENV === "production") return undefined;
+  return customerId?.includes("customer-b") ? "demo-customer-b" : "demo-customer-a";
+}
+
+const localServiceIds: Record<string, string> = {
+  "lost-card": "lost-stolen-card",
+  "wealth-coach": "ask-wealth-coach",
+  investments: "investments-overview",
+  profile: "my-profile",
+  privacy: "privacy-consent",
+  "branch-atm": "branch-atm-locator",
+};
+
+function localServiceId(slug: string): string {
+  return localServiceIds[slug] ?? slug;
 }
 
 export async function clearRecentServices(options?: { customerId?: string | null; environment?: string }): Promise<ServicePreferences> {

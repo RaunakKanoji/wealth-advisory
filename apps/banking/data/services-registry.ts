@@ -21,8 +21,8 @@ export const serviceCategories: ServiceCategory[] = [
 export const serviceRouteHrefs: Partial<Record<ServiceRouteKey, Href>> = {
   accounts: "/(app)/(tabs)/accounts",
   "account-details": "/(app)/(tabs)/accounts",
-  "account-transactions": "/(app)/(tabs)/accounts",
-  "account-documents": "/(app)/(tabs)/accounts",
+  "account-transactions": "/(app)/activity",
+  "account-documents": "/(app)/accounts/statements",
   "transfer-money": "/(app)/transfers",
   "scan-qr": "/(app)/scan-qr",
   beneficiaries: "/(app)/beneficiaries",
@@ -68,7 +68,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "my-accounts",
     title: "My accounts",
-    description: "View balances, account details, and linked accounts.",
+    description: "View balances and linked accounts.",
     categoryId: "accounts-deposits",
     aliases: ["bank account", "balance", "linked accounts"],
     icon: icon.accounts,
@@ -82,7 +82,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "account-details",
     title: "Account details",
-    description: "Review the details, balance visibility, and services for an account.",
+    description: "View account information and settings.",
     categoryId: "accounts-deposits",
     aliases: ["account information", "account profile"],
     icon: icon.details,
@@ -97,7 +97,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "transaction-history",
     title: "Transaction history",
-    description: "Search and filter activity for an eligible account.",
+    description: "Search and filter account activity.",
     categoryId: "accounts-deposits",
     aliases: ["transactions", "passbook", "account activity", "statement history"],
     icon: icon.transactions,
@@ -112,7 +112,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "account-statements",
     title: "Account statements",
-    description: "Open the application-generated statement and export flow for an account.",
+    description: "View or export a statement for an account.",
     categoryId: "accounts-deposits",
     aliases: ["statement", "passbook", "account document", "account documents"],
     icon: icon.documents,
@@ -128,7 +128,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "fixed-deposits",
     title: "Fixed deposits",
-    description: "Review the fixed-deposit information currently shown in the application.",
+    description: "Review fixed-deposit information.",
     categoryId: "accounts-deposits",
     aliases: ["fd", "term deposit", "fixed deposit"],
     icon: icon.documents,
@@ -152,7 +152,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "recurring-deposits",
     title: "Recurring deposits",
-    description: "Review recurring-deposit information when it is available in your accounts.",
+    description: "Review recurring-deposit information.",
     categoryId: "accounts-deposits",
     aliases: ["rd", "recurring deposit", "monthly deposit"],
     icon: icon.documents,
@@ -176,9 +176,9 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "transfer-money",
     title: "Transfer money",
-    description: "Send money to your accounts, a bank account, or a UPI ID.",
+    description: "Send money to accounts or UPI IDs.",
     categoryId: "payments-transfers",
-    aliases: ["send money", "money transfer", "bank transfer", "pay someone"],
+    aliases: ["send money", "money transfer", "bank transfer", "upi", "pay someone"],
     icon: icon.transfer,
     iconTone: "orange",
     sortOrder: 10,
@@ -190,7 +190,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "scan-qr",
     title: "Scan QR",
-    description: "Scan a supported payment QR and review it before continuing.",
+    description: "Pay securely using a QR code.",
     categoryId: "payments-transfers",
     aliases: ["qr payment", "scan code", "upi qr"],
     icon: icon.qr,
@@ -204,7 +204,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "beneficiaries",
     title: "Manage beneficiaries",
-    description: "Review saved recipients and add or archive a beneficiary.",
+    description: "Manage saved recipients.",
     categoryId: "payments-transfers",
     aliases: ["payees", "recipients", "beneficiary", "beneficiaries"],
     icon: icon.beneficiaries,
@@ -218,7 +218,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "transfer-history",
     title: "Transfer history",
-    description: "Review transfer attempts and their current demo status.",
+    description: "Review transfer attempts and statuses.",
     categoryId: "payments-transfers",
     aliases: ["payment history", "money transfer history", "sent payments"],
     icon: icon.transactions,
@@ -232,7 +232,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "my-cards",
     title: "My cards",
-    description: "View your debit, credit, and virtual cards.",
+    description: "View and manage your cards.",
     categoryId: "cards",
     aliases: ["card", "debit card", "credit card", "virtual card"],
     icon: icon.cards,
@@ -246,7 +246,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "card-controls",
     title: "Card usage controls",
-    description: "Review supported domestic, international, and channel controls.",
+    description: "Manage card usage controls.",
     categoryId: "cards",
     aliases: ["card usage", "turn card on off", "card settings"],
     icon: icon.controls,
@@ -261,7 +261,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "card-limits",
     title: "Manage transaction limits",
-    description: "Review and edit issuer-supported limits for a card.",
+    description: "Review and edit card limits.",
     categoryId: "cards",
     aliases: ["card limit", "card limits", "spending limit", "transaction limit"],
     icon: icon.controls,
@@ -276,7 +276,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "lost-stolen-card",
     title: "Report lost or stolen card",
-    description: "Choose a card and review the existing protected assistance flow.",
+    description: "Review lost-card assistance options.",
     categoryId: "cards",
     aliases: ["block card", "lost card", "stolen card", "card emergency"],
     icon: icon.lost,
@@ -292,7 +292,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "card-statements",
     title: "Credit-card statements",
-    description: "Review billing information for a supported credit card.",
+    description: "Review supported credit-card billing.",
     categoryId: "cards",
     aliases: ["credit card bill", "credit card statement", "card billing"],
     icon: icon.documents,
@@ -308,7 +308,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "ask-wealth-coach",
     title: "Ask Wealth Coach",
-    description: "Open the existing Coach conversation entry point.",
+    description: "Ask the Wealth Coach for guidance.",
     categoryId: "wealth-planning",
     aliases: ["coach", "financial guidance", "save more", "ask a question"],
     icon: icon.coach,
@@ -322,7 +322,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "financial-goals",
     title: "Financial goals",
-    description: "Open the Wealth Coach dashboard and review goal progress.",
+    description: "Track progress toward your financial goals.",
     categoryId: "wealth-planning",
     aliases: ["goal", "goals", "save more", "retirement"],
     icon: icon.goals,
@@ -336,7 +336,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "spending-insights",
     title: "Spending insights",
-    description: "Open the Wealth Coach dashboard for available spending observations.",
+    description: "Review available spending observations.",
     categoryId: "wealth-planning",
     aliases: ["spend", "spending", "insights", "analysis"],
     icon: icon.insights,
@@ -350,7 +350,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "investments-overview",
     title: "Investments overview",
-    description: "Learn what investment information is currently available in the app.",
+    description: "Learn about investment information in the app.",
     categoryId: "wealth-planning",
     aliases: ["investments", "mutual funds", "portfolio"],
     icon: icon.investments,
@@ -374,7 +374,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "financial-reports",
     title: "Financial reports",
-    description: "Understand which reports are available in the current application.",
+    description: "Review available financial reports.",
     categoryId: "wealth-planning",
     aliases: ["report", "reports", "financial summary"],
     icon: icon.report,
@@ -398,7 +398,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "loans",
     title: "Loans",
-    description: "Understand which loan information is currently available in the app.",
+    description: "Learn about available loan information.",
     categoryId: "loans-insurance",
     aliases: ["loan", "borrow", "repayment", "emi"],
     icon: { family: "material-community", name: "wallet-outline" },
@@ -421,7 +421,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "insurance",
     title: "Insurance",
-    description: "Understand which insurance information is currently available in the app.",
+    description: "Learn about available insurance information.",
     categoryId: "loans-insurance",
     aliases: ["insurance", "policy", "coverage", "premium"],
     icon: { family: "ionicons", name: "shield-outline" },
@@ -444,7 +444,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "tax-documents",
     title: "Tax & documents",
-    description: "Review the document capabilities currently available in the application.",
+    description: "Find account documents and statements.",
     categoryId: "documents-requests",
     aliases: ["tax", "document", "documents", "interest certificate"],
     icon: icon.documents,
@@ -468,7 +468,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "service-requests",
     title: "Service requests",
-    description: "See what request-management support is currently connected.",
+    description: "Review service-request information.",
     categoryId: "documents-requests",
     aliases: ["track request", "request status", "bank request", "cheque book", "chequebook"],
     icon: icon.requests,
@@ -491,7 +491,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "my-profile",
     title: "My profile",
-    description: "Review your authenticated profile using the existing profile flow.",
+    description: "Manage your personal information.",
     categoryId: "profile-security",
     aliases: ["profile", "personal details", "customer profile"],
     icon: icon.profile,
@@ -505,7 +505,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "security-settings",
     title: "Security settings",
-    description: "Understand the security settings currently available in the application.",
+    description: "Review available security settings.",
     categoryId: "profile-security",
     aliases: ["security", "secure", "password", "two factor", "2fa"],
     icon: icon.security,
@@ -529,7 +529,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "privacy-consent",
     title: "Privacy & consent",
-    description: "Review how privacy and marketing consent are treated in this application.",
+    description: "Review privacy and consent handling.",
     categoryId: "profile-security",
     aliases: ["privacy", "consent", "data privacy", "marketing consent"],
     icon: icon.security,
@@ -552,7 +552,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "notification-preferences",
     title: "Notification preferences",
-    description: "Review the notification destination currently available in the application.",
+    description: "Review notification settings.",
     categoryId: "profile-security",
     aliases: ["notifications", "alerts", "notification settings"],
     icon: icon.notifications,
@@ -575,7 +575,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "help-center",
     title: "Help center",
-    description: "See the support options configured for this application.",
+    description: "Find available support options.",
     categoryId: "help-support",
     aliases: ["help", "support", "faq", "how do I"],
     icon: icon.help,
@@ -598,7 +598,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "contact-support",
     title: "Contact support",
-    description: "Review the support-contact integration state before leaving the app.",
+    description: "Review contact-support options.",
     categoryId: "help-support",
     aliases: ["contact us", "contact bank", "complaint", "report a problem"],
     icon: icon.contact,
@@ -621,7 +621,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "branch-atm-locator",
     title: "Branch / ATM information",
-    description: "Review the locator integration state without requesting location access.",
+    description: "Review branch and ATM locator information.",
     categoryId: "help-support",
     aliases: ["branch", "atm", "cash machine", "location"],
     icon: icon.location,
@@ -644,7 +644,7 @@ export const serviceRegistry: ServiceDefinition[] = [
   {
     id: "offers",
     title: "Offers",
-    description: "Review the current availability of personalised offers.",
+    description: "Review current offers information.",
     categoryId: "wealth-planning",
     aliases: ["offer", "benefits", "rewards"],
     icon: icon.offer,
@@ -665,6 +665,34 @@ export const serviceRegistry: ServiceDefinition[] = [
     favouriteAllowed: true,
   },
 ];
+
+// The directory is intentionally smaller than the historical banking catalogue.
+// Keep only flows that have a working destination in this MVP; information-only
+// product placeholders remain available to the registry tests and future work,
+// but are not presented as live app capabilities.
+export const mvpServiceIds: ReadonlySet<string> = new Set([
+  "my-accounts",
+  "account-details",
+  "transaction-history",
+  "account-statements",
+  "transfer-money",
+  "scan-qr",
+  "beneficiaries",
+  "transfer-history",
+  "my-cards",
+  "card-controls",
+  "card-limits",
+  "lost-stolen-card",
+  "card-statements",
+  "ask-wealth-coach",
+  "financial-goals",
+  "spending-insights",
+  "my-profile",
+] as const);
+
+export function isMvpService(service: ServiceDefinition): boolean {
+  return mvpServiceIds.has(service.id);
+}
 
 const categoryIds = new Set(serviceCategories.map((category) => category.id));
 

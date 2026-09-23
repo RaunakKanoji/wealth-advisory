@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PageHeader } from "@/components/design-system";
 import {
   bankingServiceItems,
   priorityActionItems,
@@ -23,6 +24,7 @@ import { PriorityActionsGrid } from "@/components/more/priority-actions-grid";
 import { ServiceSectionCard } from "@/components/more/service-section-card";
 import { SupportSection } from "@/components/more/support-section";
 import { moreColors } from "@/components/more/tokens";
+import { useDemoSession } from "@/lib/demo-session";
 
 function getDisplayName(
   isLoaded: boolean,
@@ -81,6 +83,7 @@ function getInitials(
 export default function MoreScreen() {
   const router = useRouter();
   const { user, isLoaded } = useUser();
+  const { session: demoSession } = useDemoSession();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -95,18 +98,19 @@ export default function MoreScreen() {
     android: 66 + Math.max(insets.bottom, 10),
     default: 76,
   });
-  const email = user?.primaryEmailAddress?.emailAddress ?? null;
+  const email = user?.primaryEmailAddress?.emailAddress ?? demoSession?.email ?? null;
+  const profileLoaded = isLoaded || Boolean(demoSession);
   const displayName = getDisplayName(
-    isLoaded,
-    user?.firstName,
-    user?.lastName,
-    user?.fullName,
+    profileLoaded,
+    user?.firstName ?? demoSession?.displayName.split(" ")[0],
+    user?.lastName ?? demoSession?.displayName.split(" ").slice(1).join(" "),
+    user?.fullName ?? demoSession?.displayName,
     email,
   );
   const initials = getInitials(
-    user?.firstName,
-    user?.lastName,
-    user?.fullName,
+    user?.firstName ?? demoSession?.displayName.split(" ")[0],
+    user?.lastName ?? demoSession?.displayName.split(" ").slice(1).join(" "),
+    user?.fullName ?? demoSession?.displayName,
     email,
   );
 
@@ -130,16 +134,9 @@ export default function MoreScreen() {
             },
           ]}
         >
-          <View style={styles.titleRow}>
-            <Text
-              accessibilityRole="header"
-              style={[
-                styles.pageTitle,
-                isSmallScreen && styles.smallPageTitle,
-              ]}
-            >
-              More Actions
-            </Text>
+          <PageHeader
+            title="More Actions"
+            action={
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Browse all services"
@@ -149,10 +146,11 @@ export default function MoreScreen() {
               <Ionicons name="grid-outline" size={17} color={moreColors.brandGreenDark} />
               <Text style={styles.browseButtonText}>All Services</Text>
             </Pressable>
-          </View>
+            }
+          />
 
           <ProfileSummaryCard
-            isLoaded={isLoaded}
+            isLoaded={profileLoaded}
             name={displayName}
             email={email}
             imageUrl={user?.imageUrl ?? null}
@@ -177,9 +175,11 @@ export default function MoreScreen() {
             <ServiceSectionCard items={bankingServiceItems} />
           </View>
 
-          <View style={styles.supportSection}>
-            <SupportSection items={supportActionItems} />
-          </View>
+          {supportActionItems.length > 0 ? (
+            <View style={styles.supportSection}>
+              <SupportSection items={supportActionItems} />
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </View>
@@ -199,24 +199,6 @@ const styles = StyleSheet.create({
   contentInner: {
     width: "100%",
     alignSelf: "center",
-  },
-  pageTitle: {
-    marginBottom: 0,
-    color: moreColors.textPrimary,
-    fontSize: 30,
-    lineHeight: 38,
-    fontWeight: "700",
-  },
-  smallPageTitle: {
-    fontSize: 27,
-    lineHeight: 34,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 18,
   },
   browseButton: {
     minHeight: 44,

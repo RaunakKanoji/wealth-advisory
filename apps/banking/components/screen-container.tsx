@@ -3,6 +3,8 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import type { Edge } from "react-native-safe-area-context";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { appColors } from "@/components/theme/tokens";
+
 type ScreenContainerProps = PropsWithChildren<{
   scroll?: boolean;
   edges?: Edge[];
@@ -13,7 +15,7 @@ export function ScreenContainer({
   children,
   scroll = false,
   edges = ["top", "bottom"],
-  backgroundColor = "#F4F7F6", // light background default
+  backgroundColor = appColors.background,
 }: ScreenContainerProps) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor }]} edges={edges}>

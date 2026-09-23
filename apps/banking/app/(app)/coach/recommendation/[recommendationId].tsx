@@ -5,7 +5,7 @@ import { CoachFlowScreen } from "@/components/coach/coach-flow-screen";
 
 export default function CoachRecommendationDetailScreen() {
   const { recommendationId } = useLocalSearchParams<{ recommendationId?: string }>();
-  const title = recommendationId === "start-sip" ? "Start a New SIP" : "Recommendation details";
+  const title = recommendationId === "start-sip" || recommendationId === "increase-sip" ? "Increase your SIP" : recommendationId?.startsWith("goal-") ? "Keep building your goal" : "Recommendation details";
 
   return (
     <CoachFlowScreen

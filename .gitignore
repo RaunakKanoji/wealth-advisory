@@ -54,3 +54,9 @@ apps/*/android/
 .agents/
 .claude/
 .vscode/
+.neon
+
+# local package/build artifacts
+.pnpm-store/
+apps/*/build/
+*.zip

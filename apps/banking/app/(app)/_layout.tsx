@@ -1,10 +1,17 @@
 import { useAuth } from "@clerk/expo";
 import { Redirect, Stack } from "expo-router";
 
-export default function AppLayout() {
-  const { isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+import { appColors } from "@/components/theme/tokens";
+import { AuthLoadingScreen } from "@/components/auth-loading-screen";
+import { useDemoSession } from "@/lib/demo-session";
+import { isExplicitDemoAuthEnabled } from "@/lib/env";
 
-  if (!isSignedIn) {
+export default function AppLayout() {
+  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { session, isRestoring } = useDemoSession();
+
+  if ((!isLoaded && !isExplicitDemoAuthEnabled) || isRestoring) return <AuthLoadingScreen />;
+  if (!isSignedIn && !session) {
     return <Redirect href="/(auth)" />;
   }
 
@@ -20,13 +27,10 @@ export default function AppLayout() {
       <Stack.Screen
         name="notifications"
         options={{
-          headerShown: true,
-          title: "Notifications",
-          headerTintColor: "#14201D",
-          headerStyle: {
-            backgroundColor: "#FFFFFF",
+          headerShown: false,
+          contentStyle: {
+            backgroundColor: appColors.background,
           },
-          headerShadowVisible: false,
         }}
       />
       <Stack.Screen name="scan-qr" options={{ headerShown: false }} />
@@ -34,7 +38,6 @@ export default function AppLayout() {
       <Stack.Screen name="cards/[cardId]" options={{ headerShown: false }} />
       <Stack.Screen name="cards/transaction/[transactionId]" options={{ headerShown: false }} />
       <Stack.Screen name="coach" options={{ headerShown: false }} />
-      <Stack.Screen name="coach/history" options={{ headerShown: false }} />
       <Stack.Screen name="transfer" options={{ headerShown: false }} />
       <Stack.Screen name="transfers/index" options={{ headerShown: false }} />
       <Stack.Screen name="transfers/new" options={{ headerShown: false }} />

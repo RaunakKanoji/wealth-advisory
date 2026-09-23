@@ -15,9 +15,11 @@ import {
   getCardTransactions,
   getCards,
 } from "@/services/cards-service";
-import { formatIndianMinorUnits } from "@/lib/currency";
+import { formatINR, formatIndianMinorUnits } from "@/lib/currency";
+import { formatPercentage } from "@/lib/percentage";
 import type { AccountTransaction, TransactionCategory, TransactionStatus } from "@/types/banking";
 import type { CardTransaction } from "@/types/cards";
+import type { FinancialGoal } from "@/types/wealth-coach";
 import type {
   CoachAnswer,
   CoachAnswerBlock,
@@ -59,6 +61,13 @@ type CoachScopeInput = {
   goalId?: string;
 };
 
+export type CoachConversationContextInput = {
+  periodId?: CoachPeriod["id"];
+  period?: CoachPeriod;
+  category?: TransactionCategory;
+  selectedTransactionId?: string;
+};
+
 type RunStateCallback = (state: CoachMessage["status"]) => void;
 type RunCreatedCallback = (runId: string) => void;
 
@@ -84,6 +93,7 @@ type ScopeData = {
   scope: CoachScope;
   accounts: Awaited<ReturnType<typeof getAccounts>>;
   cards: Awaited<ReturnType<typeof getCards>>;
+  goal?: FinancialGoal;
 };
 
 type UnifiedTransaction = {
@@ -99,7 +109,7 @@ type UnifiedTransaction = {
   counterparty?: string;
   category?: TransactionCategory;
   transactionType?: CardTransaction["transactionType"];
-  sourceEnvironment: "Demo data";
+  sourceEnvironment: string;
 };
 
 type SpendingTotals = {
@@ -109,6 +119,28 @@ type SpendingTotals = {
   failedMinorUnits: number;
   transactions: UnifiedTransaction[];
 };
+
+type CashFlowTotals = {
+  inflowMinorUnits: number;
+  outflowMinorUnits: number;
+  netMinorUnits: number;
+  savingsRate?: number;
+  postedTransactions: UnifiedTransaction[];
+  pendingCount: number;
+  failedCount: number;
+};
+
+type CoachIntent =
+  | "affordability"
+  | "comparison"
+  | "transactions"
+  | "breakdown"
+  | "goal"
+  | "goal-progress"
+  | "recurring"
+  | "savings"
+  | "education"
+  | "overview";
 
 type AnalysisResult = {
   explanation: string;
@@ -121,7 +153,10 @@ type AnalysisResult = {
 };
 
 const inMemoryState = new Map<string, StoredCoachState>();
+const stateWriteQueues = new Map<string, Promise<void>>();
 const activeControllers = new Map<string, AbortController>();
+const liveRunIds = new Set<string>();
+const ACTIVE_RUN_STATUSES = new Set<CoachMessage["status"]>(["queued", "retrieving", "calculating", "preparing"]);
 let sequence = 0;
 
 function customerScope(customerId?: string | null): string {
@@ -168,6 +203,13 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+class ConversationRemovedDuringRunError extends Error {
+  constructor() {
+    super("Conversation unavailable or you do not have access to it");
+    this.name = "ConversationRemovedDuringRunError";
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
 }
@@ -186,6 +228,47 @@ function parseState(value: string | null): StoredCoachState {
   } catch {
     return emptyState();
   }
+}
+
+function recoverInterruptedRuns(state: StoredCoachState): boolean {
+  let changed = false;
+  for (const conversation of state.conversations) {
+    for (const run of conversation.runs) {
+      if (!ACTIVE_RUN_STATUSES.has(run.status) || liveRunIds.has(run.id) || activeControllers.has(run.id)) continue;
+      const timestamp = now();
+      const errorMessage = "The previous Coach response was interrupted. Retry the question to continue.";
+      run.status = "failed";
+      run.updatedAt = timestamp;
+      const userMessage = conversation.messages.find((message) => message.id === run.userMessageId && message.role === "user");
+      if (userMessage) {
+        userMessage.status = "failed";
+        userMessage.errorMessage = errorMessage;
+      }
+      const existingAssistant = run.assistantMessageId
+        ? conversation.messages.find((message) => message.id === run.assistantMessageId && message.role === "assistant")
+        : undefined;
+      if (existingAssistant) {
+        existingAssistant.status = "failed";
+        existingAssistant.errorMessage = errorMessage;
+        existingAssistant.content = errorMessage;
+      } else if (userMessage) {
+        const assistantMessage: CoachMessage = {
+          id: createId("message"),
+          role: "assistant",
+          content: errorMessage,
+          createdAt: timestamp,
+          runId: run.id,
+          status: "failed",
+          errorMessage,
+        };
+        run.assistantMessageId = assistantMessage.id;
+        conversation.messages.push(assistantMessage);
+      }
+      conversation.updatedAt = timestamp;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 async function readPersistedValue(customerId: string): Promise<string | null> {
@@ -220,39 +303,77 @@ async function persistState(customerId: string, state: StoredCoachState): Promis
   const serialized = JSON.stringify(state);
   inMemoryState.set(scopedCustomerId, clone(state));
 
-  if (Platform.OS === "web" && typeof localStorage !== "undefined") {
-    try {
-      localStorage.setItem(storageKey(scopedCustomerId, "document"), serialized);
-    } catch {
-      // Browser storage can be disabled. The in-memory state remains available.
+  const previousWrite = stateWriteQueues.get(scopedCustomerId) ?? Promise.resolve();
+  const nextWrite = previousWrite.catch(() => undefined).then(async () => {
+    if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem(storageKey(scopedCustomerId, "document"), serialized);
+      } catch {
+        // Browser storage can be disabled. The in-memory state remains available.
+      }
     }
-  }
 
-  const chunks = serialized.match(new RegExp(`.{1,${STORAGE_CHUNK_SIZE}}`, "gs")) ?? [""];
-  try {
-    const oldManifest = await SecureStore.getItemAsync(storageKey(scopedCustomerId, "manifest"));
-    const oldCount = Number.parseInt(oldManifest ?? "0", 10);
-    await Promise.all(
-      chunks.map((chunk, index) => SecureStore.setItemAsync(storageKey(scopedCustomerId, `chunk.${index}`), chunk)),
-    );
-    for (let index = chunks.length; index < oldCount; index += 1) {
-      await SecureStore.deleteItemAsync(storageKey(scopedCustomerId, `chunk.${index}`));
+    const chunks = serialized.match(new RegExp(`.{1,${STORAGE_CHUNK_SIZE}}`, "gs")) ?? [""];
+    try {
+      const oldManifest = await SecureStore.getItemAsync(storageKey(scopedCustomerId, "manifest"));
+      const oldCount = Number.parseInt(oldManifest ?? "0", 10);
+      await Promise.all(
+        chunks.map((chunk, index) => SecureStore.setItemAsync(storageKey(scopedCustomerId, `chunk.${index}`), chunk)),
+      );
+      for (let index = chunks.length; index < oldCount; index += 1) {
+        await SecureStore.deleteItemAsync(storageKey(scopedCustomerId, `chunk.${index}`));
+      }
+      await SecureStore.setItemAsync(storageKey(scopedCustomerId, "manifest"), String(chunks.length));
+    } catch {
+      // A production deployment should replace this client adapter with the
+      // authenticated conversation API. Do not block the current session when
+      // secure storage is unavailable.
     }
-    await SecureStore.setItemAsync(storageKey(scopedCustomerId, "manifest"), String(chunks.length));
-  } catch {
-    // A production deployment should replace this client adapter with the
-    // authenticated conversation API. Do not block the current session when
-    // secure storage is unavailable.
+  });
+  stateWriteQueues.set(scopedCustomerId, nextWrite);
+  try {
+    await nextWrite;
+  } finally {
+    if (stateWriteQueues.get(scopedCustomerId) === nextWrite) stateWriteQueues.delete(scopedCustomerId);
   }
 }
 
 async function loadState(customerId?: string | null): Promise<StoredCoachState> {
   const scopedCustomerId = customerScope(customerId);
   const existing = inMemoryState.get(scopedCustomerId);
-  if (existing) return clone(existing);
-  const stored = parseState(await readPersistedValue(scopedCustomerId));
-  inMemoryState.set(scopedCustomerId, clone(stored));
-  return clone(stored);
+  const state = existing ? clone(existing) : parseState(await readPersistedValue(scopedCustomerId));
+  if (recoverInterruptedRuns(state)) {
+    await persistState(scopedCustomerId, state);
+  } else if (!existing) {
+    inMemoryState.set(scopedCustomerId, clone(state));
+  }
+  return clone(state);
+}
+
+async function persistRunConversation(customerId: string, conversation: CoachConversation): Promise<boolean> {
+  const scopedCustomerId = customerScope(customerId);
+  await loadState(scopedCustomerId);
+
+  // Re-read the in-memory document after the async load. Another action may
+  // have renamed or deleted the conversation while this run was calculating.
+  const currentState = inMemoryState.get(scopedCustomerId);
+  const currentIndex = currentState?.conversations.findIndex((item) => item.id === conversation.id) ?? -1;
+  if (!currentState || currentIndex < 0) return false;
+
+  const nextState = clone(currentState);
+  const currentConversation = nextState.conversations[currentIndex];
+  const nextConversation = clone(conversation);
+  nextConversation.title = currentConversation.title;
+  nextState.conversations[currentIndex] = nextConversation;
+  await persistState(scopedCustomerId, nextState);
+
+  // A delete can be queued while the storage write above is in progress. Do
+  // not report or persist a successful run for a conversation that is gone.
+  const committedConversation = inMemoryState.get(scopedCustomerId)?.conversations
+    .find((item) => item.id === conversation.id);
+  if (!committedConversation) return false;
+  conversation.title = committedConversation.title;
+  return true;
 }
 
 function maskLastFour(lastFour: string): string {
@@ -264,6 +385,23 @@ function scopeLabel(kind: CoachScopeKind, accountLabels: string[], cardLabels: s
   if (kind === "card") return cardLabels[0] ?? "Selected card spending";
   if (kind === "goal") return goalName ? `${goalName} goal` : "Selected goal";
   return "Selected personal accounts";
+}
+
+function goalScenarioFromFinancialGoal(goal: FinancialGoal): GoalScenario {
+  const targetMinorUnits = Math.max(0, Math.round(goal.targetAmount * 100));
+  const allocatedMinorUnits = Math.max(0, Math.round(goal.currentAmount * 100));
+  return {
+    name: goal.name,
+    targetMinorUnits,
+    allocatedMinorUnits,
+    remainingMinorUnits: Math.max(0, targetMinorUnits - allocatedMinorUnits),
+    targetDate: goal.targetDate,
+  };
+}
+
+function goalProgressPercentage(scenario: GoalScenario): number {
+  if (scenario.targetMinorUnits <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((scenario.allocatedMinorUnits / scenario.targetMinorUnits) * 100)));
 }
 
 export async function resolveCoachScope(
@@ -309,12 +447,13 @@ export async function resolveCoachScope(
     if (fixtureCustomerId(scopedCustomerId) === DEMO_CUSTOMER_B) {
       throw new Error("Goal unavailable or you do not have access to it");
     }
-    const dashboard = await getWealthCoachDashboard();
+    const dashboard = await getWealthCoachDashboard({ customerId: scopedCustomerId });
     const goal = dashboard.goals.find((item) => item.id === input?.goalId);
     if (!goal) throw new Error("Goal unavailable or you do not have access to it");
     return {
       accounts,
       cards,
+      goal,
       scope: {
         kind,
         accountIds: accounts.map((account) => account.id),
@@ -352,9 +491,51 @@ export async function setCoachConsent(
   return status;
 }
 
+export async function recordCoachConsentDeclined(
+  conversationId: string,
+  userMessageId: string,
+  customerId?: string | null,
+): Promise<CoachConversation> {
+  const scopedCustomerId = customerScope(customerId);
+  const state = await loadState(scopedCustomerId);
+  const conversation = requireConversation(state, conversationId);
+  const userMessage = conversation.messages.find((message) => message.id === userMessageId && message.role === "user");
+  if (!userMessage) throw new Error("The question is unavailable");
+  const run = [...conversation.runs]
+    .reverse()
+    .find((candidate) => candidate.userMessageId === userMessageId && !candidate.assistantMessageId);
+  if (!run) return clone(conversation);
+
+  const assistantMessage: CoachMessage = {
+    id: createId("message"),
+    role: "assistant",
+    content: "I won’t access your personal financial data. You can still ask a general financial question, or review Coach personalisation when you want a data-based answer.",
+    createdAt: now(),
+    runId: run.id,
+    status: "completed",
+  };
+  run.assistantMessageId = assistantMessage.id;
+  run.updatedAt = now();
+  conversation.messages.push(assistantMessage);
+  conversation.updatedAt = now();
+  await persistState(scopedCustomerId, state);
+  return clone(conversation);
+}
+
 export async function listCoachConversations(customerId?: string | null): Promise<CoachConversation[]> {
   const state = await loadState(customerId);
-  return clone(state.conversations).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  const conversationsWithTitles = state.conversations.map((conversation) => {
+    if (conversation.title !== "New conversation") return conversation;
+    const firstUserMessage = conversation.messages.find((message) => message.role === "user" && message.content.trim().length > 0);
+    return firstUserMessage ? { ...conversation, title: createConversationTitle(firstUserMessage.content) } : conversation;
+  });
+  if (conversationsWithTitles.some((conversation, index) => conversation.title !== state.conversations[index]?.title)) {
+    state.conversations = conversationsWithTitles;
+    await persistState(customerScope(customerId), state);
+  }
+  return clone(conversationsWithTitles)
+    .filter(hasMeaningfulConversation)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export async function getCoachConversation(
@@ -369,6 +550,7 @@ export async function getCoachConversation(
 export async function createCoachConversation(
   customerId: string | null | undefined,
   input?: CoachScopeInput,
+  contextInput?: CoachConversationContextInput,
 ): Promise<CoachConversation> {
   const scopedCustomerId = customerScope(customerId);
   const data = await resolveCoachScope(scopedCustomerId, input);
@@ -379,7 +561,18 @@ export async function createCoachConversation(
     title: "New conversation",
     createdAt: timestamp,
     updatedAt: timestamp,
-    context: { scope: data.scope },
+    context: {
+      scope: data.scope,
+      period: contextInput?.period
+        ? validatedContextPeriod(contextInput.period)
+        : contextInput?.periodId
+          ? periodFor(contextInput.periodId)
+          : undefined,
+      category: contextInput?.category,
+      selectedTransactionId: contextInput?.selectedTransactionId?.trim().slice(0, 200) || undefined,
+      selectedGoalId: data.goal?.id,
+      goalScenario: data.goal ? goalScenarioFromFinancialGoal(data.goal) : undefined,
+    },
     messages: [],
     runs: [],
   };
@@ -430,8 +623,9 @@ function isGeneralQuestion(text: string): boolean {
 }
 
 function requiresPersonalData(text: string, context: CoachConversationContext): boolean {
+  if (context.selectedTransactionId) return true;
   if (isGeneralQuestion(text)) return false;
-  return context.scope.kind !== "personal" || /\b(my|mine|spending|spent|money|account|card|goal|saving|save|income|balance|transaction|month)\b/i.test(text);
+  return context.scope.kind !== "personal" || /\b(my|mine|spending|spent|money|account|card|goal|saving|savings|save|income|balance|transaction|month|afford|affordability|purchase)\b/i.test(text);
 }
 
 function statusCallback(callback: RunStateCallback | undefined, state: CoachMessage["status"]): void {
@@ -455,7 +649,7 @@ function setRunStatus(
 }
 
 function activeRun(conversation: CoachConversation): CoachRun | undefined {
-  return conversation.runs.find((run) => ["queued", "retrieving", "calculating", "preparing"].includes(run.status));
+  return conversation.runs.find((run) => ACTIVE_RUN_STATUSES.has(run.status));
 }
 
 export async function submitCoachMessage(options: SubmitCoachMessageOptions): Promise<CoachMessageResult> {
@@ -484,20 +678,25 @@ export async function submitCoachMessage(options: SubmitCoachMessageOptions): Pr
   };
   conversation.messages.push(userMessage);
   conversation.runs.push(run);
+  if (conversation.title === "New conversation") {
+    conversation.title = createConversationTitle(text);
+  }
+  liveRunIds.add(run.id);
   options.onRunCreated?.(run.id);
-  await persistState(scopedCustomerId, state);
-
-  const result = await processCoachRun({
-    customerId: scopedCustomerId,
-    state,
-    conversation,
-    userMessage,
-    run,
-    signal: options.signal,
-    onStateChange: options.onStateChange,
-    onRunCreated: options.onRunCreated,
-  });
-  return result;
+  try {
+    await persistState(scopedCustomerId, state);
+    return await processCoachRun({
+      customerId: scopedCustomerId,
+      conversation,
+      userMessage,
+      run,
+      signal: options.signal,
+      onStateChange: options.onStateChange,
+      onRunCreated: options.onRunCreated,
+    });
+  } finally {
+    liveRunIds.delete(run.id);
+  }
 }
 
 export async function retryCoachMessage(
@@ -523,25 +722,28 @@ export async function retryCoachMessage(
     updatedAt: now(),
   };
   conversation.runs.push(run);
+  liveRunIds.add(run.id);
   options?.onRunCreated?.(run.id);
   userMessage.status = "queued";
   userMessage.errorMessage = undefined;
-  await persistState(scopedCustomerId, state);
-  return processCoachRun({
-    customerId: scopedCustomerId,
-    state,
-    conversation,
-    userMessage,
-    run,
-    signal: options?.signal,
-    onStateChange: options?.onStateChange,
-    onRunCreated: options?.onRunCreated,
-  });
+  try {
+    await persistState(scopedCustomerId, state);
+    return await processCoachRun({
+      customerId: scopedCustomerId,
+      conversation,
+      userMessage,
+      run,
+      signal: options?.signal,
+      onStateChange: options?.onStateChange,
+      onRunCreated: options?.onRunCreated,
+    });
+  } finally {
+    liveRunIds.delete(run.id);
+  }
 }
 
 type ProcessRunInput = {
   customerId: string;
-  state: StoredCoachState;
   conversation: CoachConversation;
   userMessage: CoachMessage;
   run: CoachRun;
@@ -556,7 +758,10 @@ async function processCoachRun(input: ProcessRunInput): Promise<CoachMessageResu
   input.signal?.addEventListener("abort", abortFromCaller, { once: true });
   activeControllers.set(input.run.id, controller);
   const signal = controller.signal;
-  const persist = async () => persistState(input.customerId, input.state);
+  const persist = async () => {
+    const persisted = await persistRunConversation(input.customerId, input.conversation);
+    if (!persisted) throw new ConversationRemovedDuringRunError();
+  };
 
   try {
     const consent = await getCoachConsent(input.customerId);
@@ -577,10 +782,20 @@ async function processCoachRun(input: ProcessRunInput): Promise<CoachMessageResu
     await yieldToRuntime();
     assertNotAborted(signal);
 
-    const scopeData = await resolveCoachScope(input.customerId, input.conversation.context.scope);
+    const currentScope = input.conversation.context.scope;
+    const scopeData = await resolveCoachScope(input.customerId, {
+      kind: currentScope.kind,
+      accountId: currentScope.accountIds[0],
+      cardId: currentScope.cardIds[0],
+      goalId: currentScope.goalId,
+    });
     input.conversation.context = {
       ...input.conversation.context,
       scope: scopeData.scope,
+      ...(scopeData.goal ? {
+        selectedGoalId: scopeData.goal.id,
+        goalScenario: goalScenarioFromFinancialGoal(scopeData.goal),
+      } : {}),
     };
     setRunStatus(input.conversation, input.run, input.userMessage, "calculating");
     statusCallback(input.onStateChange, "calculating");
@@ -648,9 +863,6 @@ async function processCoachRun(input: ProcessRunInput): Promise<CoachMessageResu
     input.run.assistantMessageId = assistantMessageId;
     setRunStatus(input.conversation, input.run, input.userMessage, "completed");
     input.conversation.messages.push(assistantMessage);
-    input.conversation.title = input.conversation.title === "New conversation"
-      ? createConversationTitle(input.userMessage.content)
-      : input.conversation.title;
     await persist();
     statusCallback(input.onStateChange, "completed");
     return {
@@ -661,6 +873,7 @@ async function processCoachRun(input: ProcessRunInput): Promise<CoachMessageResu
       run: clone(input.run),
     };
   } catch (error) {
+    if (error instanceof ConversationRemovedDuringRunError) throw error;
     if (isAbortError(error) || signal.aborted) {
       setRunStatus(input.conversation, input.run, input.userMessage, "stopped");
       await persist();
@@ -721,9 +934,41 @@ export async function stopCoachRun(
   return clone(conversation);
 }
 
+function hasMeaningfulConversation(conversation: CoachConversation): boolean {
+  return conversation.messages.some((message) => message.role === "user" && message.content.trim().length > 0);
+}
+
 function createConversationTitle(text: string): string {
   const normalized = text.replace(/\s+/g, " ").trim();
-  return normalized.length > 42 ? `${normalized.slice(0, 39)}…` : normalized;
+  const lower = normalized.toLocaleLowerCase();
+  const withoutTimeQualifier = normalized.replace(/\s+(this|next|last)\s+(month|week)|\s+(today|right now)$/i, "").trim();
+
+  if (/where did|most of my money|overspend|spend the most/.test(lower)) {
+    return "Where did I spend the most?";
+  }
+
+  if (/emergency fund|emergency savings|rainy day|financial buffer/.test(lower)) {
+    return "Building an emergency fund";
+  }
+
+  const savingMatch = normalized.match(/(?:save|saving|savings)\s+(?:more\s+)?(?:for|toward|towards)\s+(.+)/i);
+  if (savingMatch?.[1]) {
+    return `Saving for ${stripTrailingPunctuation(savingMatch[1])}`.slice(0, 56);
+  }
+
+  if (/\bafford\b/i.test(normalized)) {
+    const question = withoutTimeQualifier.replace(/\?+$/, "");
+    return `${question}${question.endsWith("?") ? "" : "?"}`.slice(0, 56);
+  }
+
+  const title = stripTrailingPunctuation(withoutTimeQualifier);
+  const suffix = /\?\s*$/.test(normalized) ? "?" : "";
+  const formattedTitle = `${title}${suffix}`;
+  return formattedTitle.length > 56 ? `${formattedTitle.slice(0, 53)}…` : formattedTitle;
+}
+
+function stripTrailingPunctuation(value: string): string {
+  return value.replace(/[.!?]+$/, "").trim();
 }
 
 function periodFor(id: CoachPeriod["id"]): CoachPeriod {
@@ -736,15 +981,49 @@ function periodFor(id: CoachPeriod["id"]): CoachPeriod {
   return { id: "current-month", label: "This month · 1–30 Sep 2026", from: "2026-09-01", to: "2026-09-30", isComplete: false };
 }
 
+function validatedContextPeriod(period: CoachPeriod): CoachPeriod {
+  const isValidDate = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  };
+  if (!isValidDate(period.from) || !isValidDate(period.to) || period.from > period.to) {
+    throw new Error("Coach period must contain a valid date range");
+  }
+  const label = period.label.trim();
+  if (!label || label.length > 100) throw new Error("Coach period label is invalid");
+  return { ...period, label };
+}
+
+function lastNinetyDaysPeriod(): CoachPeriod {
+  return {
+    id: "all-available",
+    label: "Last 90 days · 9 Jun–6 Sep 2026",
+    from: "2026-06-09",
+    to: "2026-09-06",
+    isComplete: true,
+  };
+}
+
 function resolvePeriod(text: string, context: CoachConversationContext): { period: CoachPeriod; comparisonPeriod: CoachPeriod } {
   const normalized = text.toLocaleLowerCase();
-  if (normalized.includes("previous month") || normalized.includes("last month") || normalized.includes("august")) {
-    return { period: periodFor("previous-month"), comparisonPeriod: periodFor("current-month") };
-  }
-  if (context.period && (normalized.includes("that") || normalized.includes("same") || normalized.includes("behind"))) {
-    return { period: context.period, comparisonPeriod: context.comparisonPeriod ?? periodFor("previous-month") };
-  }
-  return { period: periodFor("current-month"), comparisonPeriod: periodFor("previous-month") };
+  const explicitPeriod = normalized.includes("previous month") || normalized.includes("last month") || normalized.includes("august")
+    ? periodFor("previous-month")
+    : normalized.includes("last 90 days")
+      ? lastNinetyDaysPeriod()
+      : normalized.includes("all available") || normalized.includes("all history") || normalized.includes("entire history")
+      ? periodFor("all-available")
+      : normalized.includes("current month") || normalized.includes("this month") || normalized.includes("september")
+        ? periodFor("current-month")
+        : undefined;
+  const period = explicitPeriod ?? context.period ?? periodFor("current-month");
+  const defaultComparisonPeriod = period.id === "previous-month"
+    ? periodFor("current-month")
+    : periodFor("previous-month");
+  const comparisonPeriod = !explicitPeriod && context.period?.id === period.id
+    ? context.comparisonPeriod ?? defaultComparisonPeriod
+    : defaultComparisonPeriod;
+  return { period, comparisonPeriod };
 }
 
 function resolveCategory(text: string, context: CoachConversationContext): TransactionCategory | undefined {
@@ -755,10 +1034,14 @@ function resolveCategory(text: string, context: CoachConversationContext): Trans
   return context.category;
 }
 
-function resolveIntent(text: string, context: CoachConversationContext): "comparison" | "transactions" | "breakdown" | "goal" | "recurring" | "education" | "overview" {
+function resolveIntent(text: string, context: CoachConversationContext): CoachIntent {
   const normalized = text.toLocaleLowerCase();
+  if (context.selectedTransactionId) return "transactions";
   if (isGeneralQuestion(text)) return "education";
-  if (/emergency fund|goal|save\s+₹|save\s+rs|monthly contribution|put the difference|plan for/.test(normalized) || context.goalScenario && /₹|rs|monthly|contribution/.test(normalized)) return "goal";
+  if (/\bafford(?:able|ability)?\b|\b(?:buy|purchase)\b.*(?:within|budget)/.test(normalized)) return "affordability";
+  if ((/goal|target/.test(normalized) && /progress|progressing|on track|tracking/.test(normalized)) || /how (?:am i|are my goals?|is my goal) doing/.test(normalized)) return "goal-progress";
+  if (/emergency fund|goal|save\s+₹|save\s+rs|monthly contribution|put the difference|plan for/.test(normalized) || context.goalScenario && /₹|rs|monthly|contribution|reach|target|faster|date|amount/.test(normalized)) return "goal";
+  if (/increase (?:my )?savings|improve (?:my )?savings|save more|saving more|savings rate|how much (?:am i|are we) saving|monthly savings|compare (?:my )?savings/.test(normalized)) return "savings";
   if (/show|list|behind|transactions|merchant|where did/.test(normalized) && (context.topic === "spending" || /transaction|behind|merchant/.test(normalized))) return "transactions";
   if (/changed|change|compare|increase|decrease|more|less|difference|than/.test(normalized)) return "comparison";
   if (/where did|breakdown|categories|spending|spent/.test(normalized)) return "breakdown";
@@ -875,6 +1158,31 @@ function spendingTotals(
   return { amountMinorUnits, count: included.length, pendingMinorUnits, failedMinorUnits, transactions: included };
 }
 
+function cashFlowTotals(transactions: UnifiedTransaction[], period: CoachPeriod): CashFlowTotals {
+  const inPeriod = transactions.filter((transaction) => withinPeriod(transaction, period));
+  const postedTransactions = inPeriod.filter((transaction) => transaction.status === "posted");
+  const inflowMinorUnits = postedTransactions
+    .filter((transaction) => transaction.direction === "credit")
+    .reduce((sum, transaction) => sum + transaction.amountMinorUnits, 0);
+  const outflowMinorUnits = postedTransactions
+    .filter((transaction) => transaction.direction === "debit")
+    .reduce((sum, transaction) => sum + transaction.amountMinorUnits, 0);
+  const netMinorUnits = inflowMinorUnits - outflowMinorUnits;
+  const savingsRate = inflowMinorUnits > 0
+    ? Math.round((netMinorUnits / inflowMinorUnits) * 10_000) / 100
+    : undefined;
+
+  return {
+    inflowMinorUnits,
+    outflowMinorUnits,
+    netMinorUnits,
+    savingsRate,
+    postedTransactions,
+    pendingCount: inPeriod.filter((transaction) => transaction.status === "pending").length,
+    failedCount: inPeriod.filter((transaction) => transaction.status === "failed").length,
+  };
+}
+
 function transactionSource(transaction: UnifiedTransaction, period?: CoachPeriod): CoachSourceReference {
   return {
     id: `source:transaction:${transaction.id}`,
@@ -911,6 +1219,16 @@ function cardSource(cardId: string, label: string): CoachSourceReference {
   };
 }
 
+function goalSource(goal: FinancialGoal): CoachSourceReference {
+  return {
+    id: `source:goal:${goal.id}`,
+    kind: "goal",
+    label: goal.name,
+    sourceEnvironment: "Demo data",
+    capturedAt: DEMO_DATA_AS_OF,
+  };
+}
+
 function calculationSource(id: string, label: string, period?: CoachPeriod): CoachSourceReference {
   return {
     id: `source:calculation:${id}`,
@@ -934,6 +1252,45 @@ function percentChange(current: number, previous: number): number | undefined {
 
 function formatPeriodText(period: CoachPeriod): string {
   return period.label.replace(" · ", " (") + (period.id === "current-month" ? ")" : ")");
+}
+
+function amountMultiplier(suffix?: string): number {
+  const normalized = suffix?.toLocaleLowerCase().replace(/\.$/, "");
+  if (!normalized || normalized.startsWith("rupee")) return 1;
+  if (normalized === "k" || normalized.startsWith("thousand")) return 1_000;
+  if (normalized === "l" || normalized === "lac" || normalized === "lacs" || normalized.startsWith("lakh")) return 100_000;
+  if (normalized === "cr" || normalized.startsWith("crore")) return 10_000_000;
+  return 1;
+}
+
+function decimalMajorUnitsToMinorUnits(rawAmount: string, multiplier: number): number | undefined {
+  const normalized = rawAmount.replace(/,/g, "").trim();
+  if (!/^\d+(?:\.\d{1,4})?$/.test(normalized)) return undefined;
+  const [whole, fraction = ""] = normalized.split(".");
+  const denominator = 10n ** BigInt(fraction.length);
+  const numerator = BigInt(whole) * denominator + BigInt(fraction || "0");
+  const scaledMinorUnits = numerator * BigInt(multiplier) * 100n;
+  if (scaledMinorUnits % denominator !== 0n) return undefined;
+  const result = scaledMinorUnits / denominator;
+  if (result <= 0n || result > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
+  return Number(result);
+}
+
+function parsePurchaseAmountMinorUnits(text: string): number | undefined {
+  const prefixed = text.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,4})?)\s*(?:(crores?|cr|lakhs?|lacs?|lac|l|thousands?|k)\b)?/i);
+  if (prefixed?.[1]) {
+    return decimalMajorUnitsToMinorUnits(prefixed[1], amountMultiplier(prefixed[2]));
+  }
+
+  const suffixed = text.match(/\b([\d,]+(?:\.\d{1,4})?)\s*(crores?|cr|lakhs?|lacs?|lac|thousands?|k|rupees?)\b/i);
+  if (suffixed?.[1]) {
+    return decimalMajorUnitsToMinorUnits(suffixed[1], amountMultiplier(suffixed[2]));
+  }
+
+  const plainAfterAfford = text.match(/\bafford(?:\s+(?:a|an))?\s+([\d,]+(?:\.\d{1,2})?)(?=\s|$)/i);
+  return plainAfterAfford?.[1]
+    ? decimalMajorUnitsToMinorUnits(plainAfterAfford[1], 1)
+    : undefined;
 }
 
 function parseMonthlyContribution(text: string, fallback: number): number {
@@ -987,6 +1344,331 @@ function buildGoalScenario(text: string, context: CoachConversationContext): { s
   return { scenario, options };
 }
 
+function scopedResourceSources(scopeData: ScopeData): CoachSourceReference[] {
+  const accountReferences = scopeData.accounts
+    .filter((account) => scopeData.scope.accountIds.includes(account.id))
+    .map((account) => accountSource(account.id, `${account.name} ${maskLastFour(account.lastFour)}`));
+  const cardReferences = scopeData.cards
+    .filter((card) => scopeData.scope.cardIds.includes(card.id))
+    .map((card) => cardSource(card.id, `${card.productName} ${maskLastFour(card.lastFour)}`));
+  return [...accountReferences, ...cardReferences];
+}
+
+function transactionListBlock(
+  title: string,
+  transactions: UnifiedTransaction[],
+): Extract<CoachAnswerBlock, { type: "transactionList" }> | undefined {
+  if (transactions.length === 0) return undefined;
+  const items = transactions.map((transaction) => ({
+    id: transaction.id,
+    accountId: transaction.accountId,
+    cardId: transaction.cardId,
+    label: transaction.counterparty ?? transaction.description,
+    date: transaction.transactionDate,
+    amountMinorUnits: transaction.amountMinorUnits,
+    direction: transaction.direction,
+    status: transaction.status,
+    sourceReferenceId: `source:transaction:${transaction.id}`,
+  }));
+  return {
+    type: "transactionList",
+    id: createId("block"),
+    title,
+    transactionIds: items.map((item) => item.id),
+    items,
+  };
+}
+
+async function dashboardCashFlow(
+  customerId: string,
+  scopeData: ScopeData,
+  period: CoachPeriod,
+  signal?: AbortSignal,
+): Promise<Pick<CashFlowTotals, "inflowMinorUnits" | "outflowMinorUnits" | "netMinorUnits" | "savingsRate"> | undefined> {
+  if (fixtureCustomerId(customerId) !== DEMO_CUSTOMER_A || scopeData.scope.kind !== "personal" || period.id !== "current-month") {
+    return undefined;
+  }
+
+  assertNotAborted(signal);
+  const dashboard = await getWealthCoachDashboard({ customerId });
+  assertNotAborted(signal);
+  const income = dashboard.metrics.find((metric) => metric.id === "income");
+  const expenses = dashboard.metrics.find((metric) => metric.id === "expenses");
+  const savingsRate = dashboard.metrics.find((metric) => metric.id === "savings-rate");
+  if (!income || !expenses || !Number.isFinite(income.value) || !Number.isFinite(expenses.value)) return undefined;
+  const inflowMinorUnits = Math.round(income.value * 100);
+  const outflowMinorUnits = Math.round(expenses.value * 100);
+  return {
+    inflowMinorUnits,
+    outflowMinorUnits,
+    netMinorUnits: inflowMinorUnits - outflowMinorUnits,
+    savingsRate: savingsRate && Number.isFinite(savingsRate.value) ? savingsRate.value : undefined,
+  };
+}
+
+async function analyseAffordabilityQuestion(
+  customerId: string,
+  text: string,
+  scopeData: ScopeData,
+  period: CoachPeriod,
+  comparisonPeriod: CoachPeriod,
+  signal?: AbortSignal,
+): Promise<AnalysisResult> {
+  const purchaseMinorUnits = parsePurchaseAmountMinorUnits(text);
+  if (!purchaseMinorUnits) {
+    return {
+      explanation: "I need the purchase amount before I can prepare a funding-capacity check. I will use the amount only for an illustration and will not move or reserve money.",
+      blocks: [{
+        type: "clarification",
+        id: createId("block"),
+        question: "What purchase amount should I assess?",
+        options: [`Can I afford ${formatINR(10000)}?`, `Can I afford ${formatINR(50000)}?`, `Can I afford ${formatINR(100000)}?`],
+      }],
+      sourceReferences: [],
+      contextPatch: { topic: "cash-flow", period, comparisonPeriod },
+      assumptions: [],
+      limitations: ["No affordability conclusion is possible until a purchase amount is provided."],
+      suggestedFollowUps: [],
+    };
+  }
+
+  const transactions = await loadScopeTransactions(scopeData, customerId, signal);
+  const ledgerCashFlow = cashFlowTotals(transactions, period);
+  const dashboardSnapshot = await dashboardCashFlow(customerId, scopeData, period, signal);
+  const dashboardMatchesLedger = dashboardSnapshot
+    ? dashboardSnapshot.inflowMinorUnits === ledgerCashFlow.inflowMinorUnits
+      && dashboardSnapshot.outflowMinorUnits === ledgerCashFlow.outflowMinorUnits
+    : false;
+  const cashFlow = dashboardMatchesLedger ? { ...ledgerCashFlow, ...dashboardSnapshot } : ledgerCashFlow;
+  const scopedAccounts = scopeData.accounts.filter((account) => scopeData.scope.accountIds.includes(account.id));
+  const liquidAccounts = scopedAccounts.filter((account) =>
+    account.status === "active"
+      && ["savings", "current", "salary"].includes(account.type)
+      && Number.isInteger(account.availableBalanceMinorUnits),
+  );
+  const availableFundsMinorUnits = liquidAccounts.length > 0
+    ? liquidAccounts.reduce((sum, account) => sum + (account.availableBalanceMinorUnits ?? 0), 0)
+    : undefined;
+  const selectedCreditCards = scopeData.cards.filter((card) =>
+    scopeData.scope.kind === "card"
+      && scopeData.scope.cardIds.includes(card.id)
+      && Number.isInteger(card.creditFacility?.availableCreditMinorUnits),
+  );
+  const availableCreditMinorUnits = selectedCreditCards.length > 0
+    ? selectedCreditCards.reduce((sum, card) => sum + (card.creditFacility?.availableCreditMinorUnits ?? 0), 0)
+    : undefined;
+  const remainingFundsMinorUnits = availableFundsMinorUnits === undefined
+    ? undefined
+    : availableFundsMinorUnits - purchaseMinorUnits;
+  const purchaseShare = availableFundsMinorUnits && availableFundsMinorUnits > 0
+    ? Math.round((purchaseMinorUnits / availableFundsMinorUnits) * 1_000) / 10
+    : undefined;
+  const calculation = calculationSource(
+    `affordability-${period.id}`,
+    dashboardMatchesLedger ? "Available funds and monthly dashboard cash-flow check" : "Available funds and posted cash-flow check",
+    period,
+  );
+  const largestOutflows = cashFlow.postedTransactions
+    .filter((transaction) => transaction.direction === "debit")
+    .sort((left, right) => right.amountMinorUnits - left.amountMinorUnits)
+    .slice(0, 5);
+  const sourceReferences = dedupeSourceReferences([
+    calculation,
+    ...scopedResourceSources(scopeData),
+    ...cashFlow.postedTransactions.map((transaction) => transactionSource(transaction, period)),
+  ]);
+  const metrics: Extract<CoachAnswerBlock, { type: "metricSummary" }>["metrics"] = [
+    {
+      key: "purchase-amount",
+      label: "Purchase amount",
+      valueMinorUnits: purchaseMinorUnits,
+      displayValue: formatIndianMinorUnits(purchaseMinorUnits),
+      unit: "INR",
+      sourceReferenceId: calculation.id,
+    },
+  ];
+  if (availableFundsMinorUnits !== undefined) {
+    metrics.push(
+      {
+        key: "available-funds",
+        label: "Reported available funds",
+        valueMinorUnits: availableFundsMinorUnits,
+        displayValue: formatIndianMinorUnits(availableFundsMinorUnits),
+        unit: "INR",
+        sourceReferenceId: calculation.id,
+      },
+      {
+        key: "funds-after-purchase",
+        label: "Funds after purchase",
+        valueMinorUnits: remainingFundsMinorUnits,
+        displayValue: formatIndianMinorUnits(remainingFundsMinorUnits ?? 0),
+        unit: "INR",
+        sourceReferenceId: calculation.id,
+      },
+    );
+  } else if (availableCreditMinorUnits !== undefined) {
+    metrics.push({
+      key: "available-credit",
+      label: "Reported available credit",
+      valueMinorUnits: availableCreditMinorUnits,
+      displayValue: formatIndianMinorUnits(availableCreditMinorUnits),
+      unit: "INR",
+      sourceReferenceId: calculation.id,
+    });
+  }
+  metrics.push({
+    key: "recorded-net-cash-flow",
+    label: "Recorded net cash flow",
+    valueMinorUnits: cashFlow.netMinorUnits,
+    displayValue: formatIndianMinorUnits(cashFlow.netMinorUnits),
+    unit: "INR",
+    sourceReferenceId: calculation.id,
+  });
+
+  let capacityExplanation: string;
+  if (availableFundsMinorUnits !== undefined) {
+    capacityExplanation = remainingFundsMinorUnits !== undefined && remainingFundsMinorUnits >= 0
+      ? `${formatIndianMinorUnits(purchaseMinorUnits)} fits within ${formatIndianMinorUnits(availableFundsMinorUnits)} of reported available funds and would leave ${formatIndianMinorUnits(remainingFundsMinorUnits)}${purchaseShare === undefined ? "" : ` (${formatPercentage(Math.max(0, 100 - purchaseShare))} of those funds)`}.`
+      : `${formatIndianMinorUnits(purchaseMinorUnits)} exceeds the ${formatIndianMinorUnits(availableFundsMinorUnits)} reported available funds by ${formatIndianMinorUnits(Math.abs(remainingFundsMinorUnits ?? 0))}.`;
+  } else if (availableCreditMinorUnits !== undefined) {
+    capacityExplanation = `The selected card reports ${formatIndianMinorUnits(availableCreditMinorUnits)} of available credit, but credit headroom is not the same as affordability or cash available to repay it.`;
+  } else {
+    capacityExplanation = "The selected scope does not report an available balance that I can use for a funding-capacity check.";
+  }
+
+  const evidenceBlock = transactionListBlock("Largest posted outflows in the selected month", largestOutflows);
+  return {
+    explanation: `${capacityExplanation} Recorded net cash flow for ${formatPeriodText(period)} is ${formatIndianMinorUnits(cashFlow.netMinorUnits)}. This is a funding-capacity illustration, not certainty that the purchase is affordable; preserve upcoming obligations and your chosen emergency reserve before deciding. I have not moved or reserved any money.`,
+    blocks: [
+      { type: "metricSummary", id: createId("block"), metrics },
+      ...(evidenceBlock ? [evidenceBlock] : []),
+    ],
+    sourceReferences,
+    contextPatch: { topic: "cash-flow", period, comparisonPeriod },
+    assumptions: [
+      "The purchase is treated as a one-time payment in full, without financing, fees, rewards, or price changes.",
+      "Reported available balances are used only for active savings, current, or salary accounts in the selected customer-owned scope.",
+      ...(dashboardMatchesLedger ? ["The monthly dashboard income and expense totals match the exact posted-transaction calculation for this scope."] : []),
+    ],
+    limitations: [
+      "Upcoming bills, essential spending, emergency-reserve needs, outside accounts, and future income are not known, so funding capacity is not a guarantee of affordability.",
+      "The selected period may be incomplete; pending and failed rows are excluded from net cash flow.",
+      "Card channel, merchant, daily, and per-transaction limits are not validated by this illustration.",
+    ],
+    suggestedFollowUps: ["How can I increase my savings?", "Show the transactions behind this", "Help me plan an emergency fund"],
+  };
+}
+
+async function analyseSavingsQuestion(
+  customerId: string,
+  scopeData: ScopeData,
+  period: CoachPeriod,
+  comparisonPeriod: CoachPeriod,
+  signal?: AbortSignal,
+): Promise<AnalysisResult> {
+  const transactions = await loadScopeTransactions(scopeData, customerId, signal);
+  const ledgerCashFlow = cashFlowTotals(transactions, period);
+  const previousCashFlow = cashFlowTotals(transactions, comparisonPeriod);
+  const dashboardSnapshot = await dashboardCashFlow(customerId, scopeData, period, signal);
+  const dashboardMatchesLedger = dashboardSnapshot
+    ? dashboardSnapshot.inflowMinorUnits === ledgerCashFlow.inflowMinorUnits
+      && dashboardSnapshot.outflowMinorUnits === ledgerCashFlow.outflowMinorUnits
+    : false;
+  const cashFlow = dashboardMatchesLedger ? { ...ledgerCashFlow, ...dashboardSnapshot } : ledgerCashFlow;
+  const calculation = calculationSource(
+    `savings-${period.id}`,
+    dashboardMatchesLedger ? "Monthly dashboard and posted cash-flow savings calculation" : "Posted cash-flow savings calculation",
+    period,
+  );
+  const categories = (["food", "shopping", "bill", "cash", "other"] as TransactionCategory[])
+    .map((category) => ({ category, totals: spendingTotals(transactions, period, category) }))
+    .filter(({ totals }) => totals.amountMinorUnits > 0)
+    .sort((left, right) => right.totals.amountMinorUnits - left.totals.amountMinorUnits);
+  const topReviewCategory = categories.find(({ category }) => ["food", "shopping", "cash", "other"].includes(category));
+  const tenPercentScenarioMinorUnits = topReviewCategory
+    ? Math.floor(topReviewCategory.totals.amountMinorUnits / 10)
+    : undefined;
+  const sourceReferences = dedupeSourceReferences([
+    calculation,
+    ...scopedResourceSources(scopeData),
+    ...cashFlow.postedTransactions.map((transaction) => transactionSource(transaction, period)),
+  ]);
+  const metrics: Extract<CoachAnswerBlock, { type: "metricSummary" }>["metrics"] = [
+    {
+      key: "recorded-inflow",
+      label: "Recorded inflow",
+      valueMinorUnits: cashFlow.inflowMinorUnits,
+      displayValue: formatIndianMinorUnits(cashFlow.inflowMinorUnits),
+      unit: "INR",
+      sourceReferenceId: calculation.id,
+    },
+    {
+      key: "recorded-outflow",
+      label: "Recorded outflow",
+      valueMinorUnits: cashFlow.outflowMinorUnits,
+      displayValue: formatIndianMinorUnits(cashFlow.outflowMinorUnits),
+      unit: "INR",
+      sourceReferenceId: calculation.id,
+    },
+    {
+      key: "recorded-net-savings",
+      label: "Recorded net savings",
+      valueMinorUnits: cashFlow.netMinorUnits,
+      displayValue: formatIndianMinorUnits(cashFlow.netMinorUnits),
+      unit: "INR",
+      sourceReferenceId: calculation.id,
+    },
+    {
+      key: "recorded-savings-rate",
+      label: "Recorded savings rate",
+      value: cashFlow.savingsRate,
+      displayValue: cashFlow.savingsRate === undefined ? "Unavailable" : formatPercentage(cashFlow.savingsRate),
+      unit: cashFlow.savingsRate === undefined ? "text" : "percentage",
+      sourceReferenceId: calculation.id,
+    },
+  ];
+  const breakdownItems = categories.map(({ category, totals }) => ({
+    category,
+    label: categoryLabel(category),
+    amountMinorUnits: totals.amountMinorUnits,
+    count: totals.count,
+    sourceReferenceId: calculation.id,
+  }));
+  const blocks: CoachAnswerBlock[] = [{ type: "metricSummary", id: createId("block"), metrics }];
+  if (breakdownItems.length > 0) {
+    blocks.push({ type: "categoryBreakdown", id: createId("block"), period, items: breakdownItems });
+  }
+
+  const savingsExplanation = cashFlow.inflowMinorUnits > 0
+    ? `For ${formatPeriodText(period)}, posted inflows are ${formatIndianMinorUnits(cashFlow.inflowMinorUnits)} and posted outflows are ${formatIndianMinorUnits(cashFlow.outflowMinorUnits)}, leaving ${formatIndianMinorUnits(cashFlow.netMinorUnits)} of recorded net savings (${formatPercentage(cashFlow.savingsRate ?? 0)}).`
+    : `For ${formatPeriodText(period)}, I found no posted inflow, so I cannot calculate a meaningful savings rate; recorded net cash flow is ${formatIndianMinorUnits(cashFlow.netMinorUnits)}.`;
+  const actionExplanation = topReviewCategory && tenPercentScenarioMinorUnits !== undefined
+    ? ` ${categoryLabel(topReviewCategory.category)} is the largest included reviewable category at ${formatIndianMinorUnits(topReviewCategory.totals.amountMinorUnits)}. A 10% reduction scenario would retain about ${formatIndianMinorUnits(tenPercentScenarioMinorUnits)} more, but choose a change that does not compromise essentials.`
+    : " I did not find a discretionary category large enough to model responsibly, so start with a user-chosen transfer only after essential costs are covered.";
+
+  return {
+    explanation: `${savingsExplanation}${actionExplanation} This analysis does not move money or guarantee that the current pace will continue.`,
+    blocks,
+    sourceReferences,
+    contextPatch: { topic: "cash-flow", period, comparisonPeriod },
+    assumptions: [
+      "Recorded net savings means posted inflows minus all posted outflows in the selected period; it is not an investment-return or net-worth measure.",
+      ...(dashboardMatchesLedger ? ["The monthly dashboard income, expenses, and savings rate match the exact posted-transaction calculation for this scope."] : []),
+    ],
+    limitations: [
+      "The current month may be incomplete, and future income or expenses are not forecast.",
+      "Pending and failed rows are excluded; transaction categories come from the shared banking service and may need review.",
+      `The comparison period recorded ${formatIndianMinorUnits(previousCashFlow.netMinorUnits)} of net cash flow, but different timing or one-off payments may make a direct comparison misleading.`,
+      "Outside accounts, cash activity, taxes, and upcoming obligations are not included unless they appear in the selected scope.",
+    ],
+    suggestedFollowUps: [
+      ...(topReviewCategory ? [`Show the transactions behind ${categoryLabel(topReviewCategory.category)}`] : []),
+      "Help me plan a savings goal",
+      "Where did I spend the most this month?",
+    ],
+  };
+}
+
 async function analyseQuestion(
   customerId: string,
   text: string,
@@ -1014,9 +1696,65 @@ async function analyseQuestion(
     };
   }
 
+  if (intent === "goal-progress") {
+    assertNotAborted(signal);
+    const goals = scopeData.goal
+      ? [scopeData.goal]
+      : (await getWealthCoachDashboard({ customerId })).goals;
+    assertNotAborted(signal);
+    const goalSources = goals.map(goalSource);
+    const goalBlocks: CoachAnswerBlock[] = goals.map((goal) => {
+      const scenario = goalScenarioFromFinancialGoal(goal);
+      return {
+        type: "goalProgress",
+        id: createId("block"),
+        goalId: goal.id,
+        name: goal.name,
+        targetMinorUnits: scenario.targetMinorUnits,
+        currentMinorUnits: scenario.allocatedMinorUnits,
+        remainingMinorUnits: scenario.remainingMinorUnits,
+        progressPercentage: goalProgressPercentage(scenario),
+        targetDate: scenario.targetDate,
+        sourceReferenceId: `source:goal:${goal.id}`,
+      };
+    });
+    const selectedGoal = goals.length === 1 ? goals[0] : undefined;
+    const selectedScenario = selectedGoal ? goalScenarioFromFinancialGoal(selectedGoal) : undefined;
+    return {
+      explanation: selectedGoal && selectedScenario
+        ? `${selectedGoal.name} is ${goalProgressPercentage(selectedScenario)}% funded, with ${formatIndianMinorUnits(selectedScenario.remainingMinorUnits)} remaining toward the ${formatIndianMinorUnits(selectedScenario.targetMinorUnits)} target${selectedScenario.targetDate ? ` by ${selectedScenario.targetDate}` : ""}.`
+        : goals.length > 0
+          ? `I found ${goals.length} goals in the selected demo dashboard. Review each goal's reported progress below before changing a contribution or target.`
+          : "I could not find a goal in the selected demo dashboard. Missing goal data is not treated as zero progress.",
+      blocks: goalBlocks.length > 0 ? goalBlocks : [{
+        type: "dataUnavailable",
+        id: createId("block"),
+        title: "No goal progress available",
+        reason: "No goal was returned for the selected customer and scope.",
+        retryable: true,
+      }],
+      sourceReferences: goalSources,
+      contextPatch: {
+        topic: "goals",
+        ...(selectedGoal && selectedScenario ? {
+          selectedGoalId: selectedGoal.id,
+          goalScenario: selectedScenario,
+        } : {}),
+      },
+      assumptions: ["Progress is calculated from the target and current amounts reported by the demo goal dashboard."],
+      limitations: ["Goal progress does not project investment returns, fees, taxes, or future contribution changes."],
+      suggestedFollowUps: selectedGoal
+        ? [`How can I reach my ${selectedGoal.name} target faster?`, "Review my monthly contribution"]
+        : ["Help me plan a savings goal"],
+    };
+  }
+
   if (intent === "goal") {
     const { scenario, options } = buildGoalScenario(text, context);
     const source = calculationSource("goal-scenario", "No-growth goal scenario", undefined);
+    if (scopeData.goal) {
+      sourceReferences.push(goalSource(scopeData.goal));
+    }
     sourceReferences.push(source);
     const selected = options.find((option) => option.monthlyContributionMinorUnits === parseMonthlyContribution(text, 5_000_00)) ?? options[0];
     return {
@@ -1025,9 +1763,19 @@ async function analyseQuestion(
       sourceReferences,
       contextPatch: { topic: "goals", goalScenario: scenario },
       assumptions: ["No investment growth, interest, tax, or fee is assumed."],
-      limitations: ["The suggested target and allocated amount are demo scenario inputs; review them before saving a goal."],
-      suggestedFollowUps: ["Use ₹7,000 per month", "Adjust the target date", "Review and save this goal"],
+      limitations: [scopeData.goal
+        ? "The selected goal values come from the demo dashboard; review them before changing or saving a plan."
+        : "The suggested target and allocated amount are demo scenario inputs; review them before saving a goal."],
+      suggestedFollowUps: [`Use ${formatINR(7000)} per month`, "Adjust the target date", "Review and save this goal"],
     };
+  }
+
+  if (intent === "affordability") {
+    return analyseAffordabilityQuestion(customerId, text, scopeData, period, comparisonPeriod, signal);
+  }
+
+  if (intent === "savings") {
+    return analyseSavingsQuestion(customerId, scopeData, period, comparisonPeriod, signal);
   }
 
   return analyseTransactionQuestion(customerId, text, context, scopeData, category, period, comparisonPeriod, signal, sourceReferences, assumptions, limitations, suggestedFollowUps);
@@ -1053,13 +1801,65 @@ async function analyseTransactionQuestion(
   const transactions = await loadScopeTransactions(scopeData, customerId, signal);
   const intent = resolveIntent(text, context);
   const label = categoryLabel(category);
-  const calculation = calculationSource(`spending-${period.id}-${category ?? "all"}`, `${label} calculation`, period);
-  sourceReferences.push(calculation);
   if (scopeData.scope.kind === "card") {
     scopeData.cards.filter((card) => scopeData.scope.cardIds.includes(card.id)).forEach((card) => sourceReferences.push(cardSource(card.id, `${card.productName} ${maskLastFour(card.lastFour)}`)));
   } else {
     scopeData.accounts.filter((account) => scopeData.scope.accountIds.includes(account.id)).forEach((account) => sourceReferences.push(accountSource(account.id, `${account.name} ${maskLastFour(account.lastFour)}`)));
   }
+  if (context.selectedTransactionId) {
+    const selectedTransaction = transactions.find((transaction) => (
+      transaction.id === context.selectedTransactionId
+      || transaction.sourceTransactionId === context.selectedTransactionId
+      || `${transaction.cardId ? "card" : "account"}:${transaction.id}` === context.selectedTransactionId
+    ));
+    if (!selectedTransaction) {
+      return {
+        explanation: "I could not find the selected transaction inside the authorised account or card scope. I did not substitute another transaction or broaden the request.",
+        blocks: [{
+          type: "dataUnavailable",
+          id: createId("block"),
+          title: "Selected transaction unavailable",
+          reason: "The selected transaction was not returned for this customer and resource scope.",
+          retryable: false,
+        }],
+        sourceReferences: dedupeSourceReferences(sourceReferences),
+        contextPatch: { topic: "spending", period, comparisonPeriod, category },
+        assumptions: [],
+        limitations: ["No other transaction was used when the selected identifier could not be resolved."],
+        suggestedFollowUps: [],
+      };
+    }
+    const selectedSource = transactionSource(selectedTransaction, period);
+    sourceReferences.push(selectedSource);
+    const selectedLabel = categoryLabel(selectedTransaction.category);
+    return {
+      explanation: `The selected transaction is a ${selectedTransaction.status} ${selectedTransaction.direction} of ${formatIndianMinorUnits(selectedTransaction.amountMinorUnits)}, recorded as ${selectedLabel.toLocaleLowerCase()} on ${selectedTransaction.transactionDate}.`,
+      blocks: [{
+        type: "transactionList",
+        id: createId("block"),
+        title: "Selected transaction",
+        transactionIds: [selectedTransaction.id],
+        items: [{
+          id: selectedTransaction.id,
+          accountId: selectedTransaction.accountId,
+          cardId: selectedTransaction.cardId,
+          label: selectedTransaction.counterparty ?? selectedTransaction.description,
+          date: selectedTransaction.transactionDate,
+          amountMinorUnits: selectedTransaction.amountMinorUnits,
+          direction: selectedTransaction.direction,
+          status: selectedTransaction.status,
+          sourceReferenceId: selectedSource.id,
+        }],
+      }],
+      sourceReferences: dedupeSourceReferences(sourceReferences),
+      contextPatch: { topic: "spending", period, comparisonPeriod, category: selectedTransaction.category ?? category },
+      assumptions: [],
+      limitations: ["This description uses the selected bank-recorded row and does not infer merchant intent."],
+      suggestedFollowUps: ["What does this transaction status mean?", "How is this transaction categorised?"],
+    };
+  }
+  const calculation = calculationSource(`spending-${period.id}-${category ?? "all"}`, `${label} calculation`, period);
+  sourceReferences.push(calculation);
   const current = spendingTotals(transactions, period, category);
   const previous = spendingTotals(transactions, comparisonPeriod, category);
   const percentage = percentChange(current.amountMinorUnits, previous.amountMinorUnits);
@@ -1108,7 +1908,7 @@ async function analyseTransactionQuestion(
     };
     const direction = current.amountMinorUnits >= previous.amountMinorUnits ? "increased" : "decreased";
     return {
-      explanation: `${label} ${direction} from ${formatIndianMinorUnits(previous.amountMinorUnits)} in ${comparisonPeriod.label.split(" · ")[1]} to ${formatIndianMinorUnits(current.amountMinorUnits)} in ${period.label.split(" · ")[1]}. That is a ${formatIndianMinorUnits(Math.abs(current.amountMinorUnits - previous.amountMinorUnits))} ${direction === "increased" ? "increase" : "decrease"}${percentage === undefined ? "; a percentage is not shown because the comparison baseline is zero" : ` (${Math.abs(percentage)}%)`}.`,
+      explanation: `${label} ${direction} from ${formatIndianMinorUnits(previous.amountMinorUnits)} in ${comparisonPeriod.label.split(" · ")[1]} to ${formatIndianMinorUnits(current.amountMinorUnits)} in ${period.label.split(" · ")[1]}. That is a ${formatIndianMinorUnits(Math.abs(current.amountMinorUnits - previous.amountMinorUnits))} ${direction === "increased" ? "increase" : "decrease"}${percentage === undefined ? "; a percentage is not shown because the comparison baseline is zero" : ` (${formatPercentage(Math.abs(percentage))})`}.`,
       blocks: [comparisonBlock],
       sourceReferences: uniqueSourceReferences,
       contextPatch: { topic: "spending", period, comparisonPeriod, category },
@@ -1200,9 +2000,9 @@ export async function saveCoachGoal(
   },
 ): Promise<SavedCoachGoal> {
   const scopedCustomerId = customerScope(customerId);
+  if (await getCoachConsent(scopedCustomerId) !== "granted") throw new Error("Coach personalisation access is required to save a goal");
   const state = await loadState(scopedCustomerId);
   const conversation = requireConversation(state, input.conversationId);
-  if (await getCoachConsent(scopedCustomerId) !== "granted") throw new Error("Coach personalisation access is required to save a goal");
   const answerMessage = conversation.messages.find((message) => message.id === input.sourceAnswerMessageId && message.role === "assistant" && message.answer);
   if (!answerMessage?.answer) throw new Error("The reviewed Coach answer is unavailable");
   if (!Number.isInteger(input.targetMinorUnits) || !Number.isInteger(input.allocatedMinorUnits) || !Number.isInteger(input.monthlyContributionMinorUnits) || input.targetMinorUnits <= input.allocatedMinorUnits || input.monthlyContributionMinorUnits <= 0) {
@@ -1237,9 +2037,9 @@ export async function saveCoachReport(
   input: { idempotencyKey: string; conversationId: string; answerMessageId: string; title?: string },
 ): Promise<SavedCoachReport> {
   const scopedCustomerId = customerScope(customerId);
+  if (await getCoachConsent(scopedCustomerId) !== "granted") throw new Error("Coach personalisation access is required to save a report");
   const state = await loadState(scopedCustomerId);
   const conversation = requireConversation(state, input.conversationId);
-  if (await getCoachConsent(scopedCustomerId) !== "granted") throw new Error("Coach personalisation access is required to save a report");
   const answerMessage = conversation.messages.find((message) => message.id === input.answerMessageId && message.role === "assistant" && message.answer);
   if (!answerMessage?.answer) throw new Error("The reviewed Coach answer is unavailable");
   const existing = state.reports.find((report) => report.idempotencyKey === input.idempotencyKey);

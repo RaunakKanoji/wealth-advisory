@@ -3,7 +3,7 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { formatIndianCurrency } from "@/lib/currency";
+import { formatINR } from "@/lib/currency";
 
 import { accountColors, softCardShadow } from "./tokens";
 
@@ -26,7 +26,7 @@ export function TotalBalanceSummary({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Total balance ${
-        isVisible ? formatIndianCurrency(balance) : "hidden"
+        isVisible ? formatINR(balance) : "hidden"
       }, across ${accountCount} accounts`}
       accessibilityHint="Opens the balance breakdown"
       onPress={onPress}
@@ -70,7 +70,7 @@ export function TotalBalanceSummary({
           numberOfLines={1}
           style={styles.balance}
         >
-          {isVisible ? formatIndianCurrency(balance) : "₹••••••••"}
+          {isVisible ? formatINR(balance) : "₹••••••••"}
         </Text>
         <Text style={styles.supportText}>Across {accountCount} accounts</Text>
       </View>

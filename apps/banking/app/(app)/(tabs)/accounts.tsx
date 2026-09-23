@@ -1,10 +1,10 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { useUser } from "@clerk/expo";
-import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useAuth, useUser } from "@clerk/expo";
+import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Platform,
+  LayoutAnimation,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,20 +12,35 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  AccountsBalanceCard,
   AccountsListCard,
   AccountsScreenHeader,
   AccountsSkeletons,
 } from "@/components/accounts";
-import { accountColors, softCardShadow } from "@/components/accounts/tokens";
+import { useBalanceVisibility } from "@/components/accounts/use-balance-visibility";
+import { accountColors } from "@/components/accounts/tokens";
+import { StateCard } from "@/components/design-system";
+import { StatusBanner } from "@/components/status-banner";
+import { appMotion, appRadii, appSpacing } from "@/components/theme/tokens";
 import { DEMO_CUSTOMER_A } from "@/data/accounts-demo-data";
-import { formatIndianMinorUnits } from "@/lib/currency";
-import { formatDate } from "@/lib/date";
-import { getAccounts } from "@/services/accounts-service";
+import { ApiError, apiErrorMessage } from "@/lib/api/client";
+import { useFinancialData } from "@/lib/api/hooks";
+import { isFinancialAuthReady, isRemoteDataEnabled } from "@/lib/env";
+import { useLoadingTimeout } from "@/lib/use-loading-timeout";
+import { useDemoSession } from "@/lib/demo-session";
+import {
+  getAccountsOverview,
+  updateBalanceVisibility,
+} from "@/services/accounts-service";
 import type { AccountListFilter } from "@/services/accounts-service";
-import type { BankAccount } from "@/types/banking";
+import type {
+  AccountOverviewAction,
+  AccountOverviewItem,
+  AccountsOverview,
+  BankAccount,
+} from "@/types/banking";
 
 const accountFilters: { key: AccountListFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -34,96 +49,215 @@ const accountFilters: { key: AccountListFilter; label: string }[] = [
   { key: "deposits", label: "Deposits" },
 ];
 
+function mapAccountError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 0) return "We couldn’t reach the banking service.";
+    if (error.status === 401 || error.status === 403) return "Your session needs to be refreshed.";
+    if (error.status === 503) return "Account information is temporarily unavailable.";
+  }
+  return apiErrorMessage(error, "account information");
+}
+
+function matchesFilter(account: AccountOverviewItem, filter: AccountListFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "deposits") return account.productKind !== "transaction";
+  if (filter === "savings") return account.type === "savings" || account.type === "salary";
+  return account.type === "current";
+}
+
+function accountSource(): "demo" | "remote" {
+  // Remote seed data is still authenticated API data; adapter selection must
+  // never depend on a provider-facing display label.
+  return isRemoteDataEnabled ? "remote" : "demo";
+}
+
 export default function AccountsScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const tabBarHeight = useBottomTabBarHeight();
   const { user, isLoaded: isUserLoaded } = useUser();
+  const { session: demoSession } = useDemoSession();
+  const isDemoUserReady = isUserLoaded || Boolean(demoSession);
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const remoteQuery = useFinancialData();
+  const {
+    overview: remoteOverview,
+    error: remoteError,
+    isFetching: remoteIsFetching,
+    isLoading: remoteIsLoading,
+    refetch: refetchRemoteOverview,
+  } = remoteQuery;
   const customerId = user?.id ?? DEMO_CUSTOMER_A;
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const remoteAuthReady = isFinancialAuthReady(isAuthLoaded, isSignedIn);
+
+  const [localOverview, setLocalOverview] = useState<AccountsOverview | null>(null);
+  const [localCustomerId, setLocalCustomerId] = useState(customerId);
+  const [localIsLoading, setLocalIsLoading] = useState(!isRemoteDataEnabled);
+  const [localIsRefreshing, setLocalIsRefreshing] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [filter, setFilter] = useState<AccountListFilter>("all");
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isBalanceVisible, setIsBalanceVisible] = useState(true);
-  const hasLoaded = useRef(false);
+  const activeCustomerId = useRef(customerId);
+  const localRequestId = useRef(0);
+  const localOverviewRef = useRef<AccountsOverview | null>(localOverview);
+  activeCustomerId.current = customerId;
+  localOverviewRef.current = localOverview;
 
-  const loadAccounts = useCallback(
-    async (initialLoad = false) => {
-      if (initialLoad) {
-        setIsLoading(true);
-      } else {
-        setIsRefreshing(true);
-      }
-      setError(null);
+  const {
+    balanceVisible,
+    isBalanceVisibilityHydrated,
+  } = useBalanceVisibility(customerId, isDemoUserReady);
+  const effectiveBalanceVisible = isBalanceVisibilityHydrated && balanceVisible;
 
-      try {
-        const nextAccounts = await getAccounts({ customerId });
-        setAccounts(nextAccounts);
-        hasLoaded.current = true;
-      } catch {
-        setError("We couldn’t load your accounts. Please try again.");
-      } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
-    },
-    [customerId],
-  );
+  const loadLocalOverview = useCallback(async (initialLoad = false) => {
+    if (isRemoteDataEnabled || !isDemoUserReady) return;
 
+    const requestedCustomerId = customerId;
+    const requestId = ++localRequestId.current;
+    if (initialLoad) {
+      setLocalIsLoading(true);
+      setLocalOverview(null);
+      localOverviewRef.current = null;
+    } else {
+      setLocalIsRefreshing(true);
+    }
+    setLocalError(null);
+
+    try {
+      const nextOverview = await getAccountsOverview({ customerId: requestedCustomerId });
+      if (activeCustomerId.current !== requestedCustomerId || localRequestId.current !== requestId) return;
+      setLocalOverview(nextOverview);
+      localOverviewRef.current = nextOverview;
+      setLocalCustomerId(requestedCustomerId);
+    } catch {
+      if (activeCustomerId.current !== requestedCustomerId || localRequestId.current !== requestId) return;
+      setLocalCustomerId(requestedCustomerId);
+      setLocalError("Account information is temporarily unavailable.");
+    } finally {
+      if (activeCustomerId.current !== requestedCustomerId || localRequestId.current !== requestId) return;
+      setLocalIsLoading(false);
+      setLocalIsRefreshing(false);
+    }
+  }, [customerId, isDemoUserReady]);
+
+  useEffect(() => {
+    if (!isRemoteDataEnabled) void loadLocalOverview(true);
+  }, [loadLocalOverview]);
+
+  const isCurrentLocalCustomer = localCustomerId === customerId;
+  const overview = isRemoteDataEnabled
+    ? remoteOverview ?? null
+    : isCurrentLocalCustomer
+      ? localOverview
+      : null;
+  const visibleError = isRemoteDataEnabled
+    ? !remoteAuthReady && isAuthLoaded
+      ? "Your session needs to be refreshed."
+      : remoteError
+        ? mapAccountError(remoteError)
+        : null
+    : isCurrentLocalCustomer
+      ? localError
+      : null;
+  const isInitialLoading = !isDemoUserReady || (isRemoteDataEnabled
+    ? !isAuthLoaded || (remoteAuthReady && !remoteOverview && (remoteIsLoading || remoteIsFetching))
+    : !isCurrentLocalCustomer || (localIsLoading && !localOverview));
+  const { timedOut: loadingTimedOut, reset: resetLoadingTimeout } = useLoadingTimeout(isInitialLoading);
+  const isRefreshing = isRemoteDataEnabled
+    ? remoteIsFetching && Boolean(remoteOverview)
+    : localIsRefreshing;
+
+  const refreshAccounts = useCallback(() => {
+    resetLoadingTimeout();
+    if (isRemoteDataEnabled) {
+      if (remoteAuthReady) void refetchRemoteOverview();
+      return;
+    }
+    void loadLocalOverview(false);
+  }, [loadLocalOverview, refetchRemoteOverview, remoteAuthReady, resetLoadingTimeout]);
+
+  // Tabs stay mounted. Refresh only after the first focus so cached content is
+  // shown immediately and subsequent visits reconcile quietly in the background.
+  const hasHandledInitialFocus = useRef(false);
+  const refreshOnFocusRef = useRef(refreshAccounts);
+  refreshOnFocusRef.current = refreshAccounts;
   useFocusEffect(
     useCallback(() => {
-      void loadAccounts(!hasLoaded.current);
-    }, [loadAccounts]),
+      if (!hasHandledInitialFocus.current) {
+        hasHandledInitialFocus.current = true;
+        return;
+      }
+      refreshOnFocusRef.current();
+    }, []),
   );
 
   const filteredAccounts = useMemo(
-    () => accounts.filter((account) => {
-      if (filter === "deposits") {
-        return account.type === "fixed-deposit" || account.type === "recurring-deposit";
-      }
-      return filter === "all" || account.type === filter;
-    }),
-    [accounts, filter],
+    () => overview?.accounts.filter((account) => matchesFilter(account, filter)) ?? [],
+    [filter, overview],
   );
 
-  const paymentBalanceMinorUnits = useMemo(
-    () => accounts
-      .filter((account) => account.type !== "fixed-deposit" && account.type !== "recurring-deposit")
-      .reduce((total, account) => total + (account.availableBalanceMinorUnits ?? account.balanceMinorUnits), 0),
-    [accounts],
-  );
-  const depositBalanceMinorUnits = useMemo(
-    () => accounts
-      .filter((account) => account.type === "fixed-deposit" || account.type === "recurring-deposit")
-      .reduce((total, account) => total + account.balanceMinorUnits, 0),
-    [accounts],
-  );
-  const lastUpdated = accounts
-    .map((account) => account.lastSuccessfulUpdate)
-    .sort()
-    .at(-1);
+  const selectFilter = (nextFilter: AccountListFilter) => {
+    if (nextFilter === filter) return;
+    LayoutAnimation.configureNext({
+      duration: appMotion.standard,
+      update: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
+    setFilter(nextFilter);
+  };
 
-  const horizontalPadding = width < 375 ? 16 : 20;
+  const horizontalPadding = width < 375 ? appSpacing.lg : appSpacing.xl;
   const isTablet = width >= 768;
-  const tabBarHeight = Platform.select({
-    ios: 72 + insets.bottom,
-    android: 66 + Math.max(insets.bottom, 10),
-    default: 76,
-  });
 
   const openAccount = (account: BankAccount) => {
+    const isDeposit = account.type === "fixed-deposit" || account.type === "recurring-deposit";
     router.push({
       pathname: "/(app)/accounts/[accountId]",
-      params: { accountId: account.id, section: "transactions" },
+      params: {
+        accountId: account.id,
+        section: isDeposit ? "details" : "transactions",
+        source: accountSource(),
+      },
+    });
+  };
+
+  const openAccountAction = (account: BankAccount, action: AccountOverviewAction) => {
+    if (action === "transfer") {
+      router.push({ pathname: "/(app)/transfer", params: { fromAccountId: account.id } });
+      return;
+    }
+    if (action === "statement") {
+      router.push({ pathname: "/(app)/accounts/statements", params: { accountId: account.id } });
+      return;
+    }
+    router.push({
+      pathname: "/(app)/accounts/[accountId]",
+      params: {
+        accountId: account.id,
+        section: "details",
+        source: accountSource(),
+      },
+    });
+  };
+
+  const toggleBalanceVisibility = () => {
+    if (!isBalanceVisibilityHydrated) return;
+    void updateBalanceVisibility(undefined, !balanceVisible, { customerId }).catch((caught) => {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[BALANCE_VISIBILITY] sync failed", caught);
+      }
     });
   };
 
   return (
     <View style={styles.container}>
       <ScrollView
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarHeight + appSpacing.xxxl }]}
       >
         <View
           style={[
@@ -131,197 +265,123 @@ export default function AccountsScreen() {
             {
               maxWidth: isTablet ? 760 : undefined,
               paddingHorizontal: horizontalPadding,
-              paddingBottom: 32 + tabBarHeight,
             },
           ]}
         >
-          <AccountsScreenHeader
-            accountCount={accounts.length}
-            lastUpdated={lastUpdated ? formatDate(lastUpdated) : undefined}
-            isRefreshing={isRefreshing}
-            onRefresh={() => void loadAccounts(false)}
-          />
-
-          {isLoading || !isUserLoaded ? (
+          {isInitialLoading && !loadingTimedOut ? (
             <AccountsSkeletons />
-          ) : error && accounts.length === 0 ? (
+          ) : isInitialLoading && loadingTimedOut ? (
             <StateCard
-              title="Accounts unavailable"
-              description={error}
               actionLabel="Retry"
-              onAction={() => void loadAccounts(true)}
-            />
-          ) : accounts.length === 0 ? (
-            <StateCard
-              title="No accounts found"
-              description="No eligible demo accounts are linked to this customer."
+              description="The banking service did not finish loading. Check your connection and try again."
+              iconName="cloud-offline-outline"
+              onAction={refreshAccounts}
+              title="Accounts data is taking too long"
             />
           ) : (
             <>
-              {error ? (
-                <View style={styles.staleBanner} accessibilityRole="alert">
-                  <Ionicons name="cloud-offline-outline" size={18} color="#8A5A10" />
-                  <Text style={styles.staleText}>{error} Showing the last successful data.</Text>
-                </View>
-              ) : null}
-
-              <BalanceSummaryCard
-                paymentBalanceMinorUnits={paymentBalanceMinorUnits}
-                depositBalanceMinorUnits={depositBalanceMinorUnits}
-                accountCount={accounts.length}
-                isVisible={isBalanceVisible}
-                onToggleVisibility={() => setIsBalanceVisible((visible) => !visible)}
+              <AccountsScreenHeader
+                isRefreshing={isRefreshing}
+                onRefresh={refreshAccounts}
               />
 
-              <View style={styles.freshnessRow}>
-                <Text style={styles.sourceLabel}>{accounts[0]?.sourceEnvironment}</Text>
-                <Text style={styles.freshnessLabel}>
-                  {lastUpdated ? `Updated ${formatDate(lastUpdated)}` : "Updated time unavailable"}
-                </Text>
-              </View>
-
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.filterContent}
-                style={styles.filterScroll}
-              >
-                {accountFilters.map((item) => {
-                  const selected = item.key === filter;
-                  return (
-                    <Pressable
-                      key={item.key}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Show ${item.label.toLowerCase()} accounts`}
-                      accessibilityState={{ selected }}
-                      onPress={() => setFilter(item.key)}
-                      style={({ pressed }) => [
-                        styles.filterChip,
-                        selected && styles.filterChipSelected,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text style={[styles.filterChipText, selected && styles.filterChipTextSelected]}>
-                        {item.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-
-              {filteredAccounts.length === 0 ? (
+              {visibleError && !overview ? (
                 <StateCard
-                  title="No matching accounts"
-                  description="Try another account filter to see your linked products."
-                  compact
+                  actionLabel="Retry"
+                  description={visibleError}
+                  iconName="cloud-offline-outline"
+                  onAction={refreshAccounts}
+                  title="Couldn’t load your accounts"
                 />
-              ) : (
-                <View style={styles.listGap}>
-                  <AccountsListCard
-                    accounts={filteredAccounts}
-                    title={filter === "all" ? "Your accounts" : accountFilters.find((item) => item.key === filter)?.label ?? "Accounts"}
-                    onAccountPress={openAccount}
+              ) : overview && overview.accounts.length === 0 ? (
+                <StateCard
+                  actionAccessibilityLabel="Link a bank account"
+                  actionLabel="Link account"
+                  description="Link a bank account to view balances, transactions and financial insights."
+                  iconName="add-circle-outline"
+                  onAction={() => router.push("/(app)/accounts/add")}
+                  title="No linked accounts yet"
+                />
+              ) : overview ? (
+                <>
+                  <AccountsBalanceCard
+                    availableToSpendMinorUnits={overview.summary.availableToSpendMinorUnits}
+                    depositBalanceMinorUnits={overview.summary.depositBalanceMinorUnits}
+                    isVisibilityReady={isBalanceVisibilityHydrated}
+                    isVisible={effectiveBalanceVisible}
+                    onToggleVisibility={toggleBalanceVisibility}
+                    totalBalanceMinorUnits={overview.summary.totalBalanceMinorUnits}
                   />
-                </View>
-              )}
+
+                  {visibleError ? (
+                    <View style={styles.staleBanner}>
+                      <StatusBanner
+                        actionLabel="Retry"
+                        iconName="cloud-offline-outline"
+                        message={`${visibleError} Showing your latest available information.`}
+                        onAction={refreshAccounts}
+                        title="Couldn’t refresh your accounts."
+                        tone="warning"
+                      />
+                    </View>
+                  ) : null}
+
+                  <ScrollView
+                    horizontal
+                    contentContainerStyle={styles.filterContent}
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.filterScroll}
+                  >
+                    {accountFilters.map((item) => {
+                      const selected = item.key === filter;
+                      return (
+                        <Pressable
+                          key={item.key}
+                          accessibilityLabel={`Show ${item.label.toLowerCase()} accounts`}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          hitSlop={2}
+                          onPress={() => selectFilter(item.key)}
+                          style={({ pressed }) => [
+                            styles.filterChip,
+                            selected && styles.filterChipSelected,
+                            pressed && styles.pressed,
+                          ]}
+                        >
+                          <Text style={[styles.filterChipText, selected && styles.filterChipTextSelected]}>
+                            {item.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <View style={styles.listSection}>
+                    <AccountsListCard
+                      accounts={filteredAccounts}
+                      isBalanceVisible={effectiveBalanceVisible}
+                      onAccountPress={openAccount}
+                      onActionPress={openAccountAction}
+                      title="Your accounts"
+                    />
+                    {filteredAccounts.length === 0 ? (
+                      <View style={styles.filteredEmptyState}>
+                        <StateCard
+                          compact
+                          description={filter === "deposits"
+                            ? "Your fixed and recurring deposits will appear here."
+                            : `No ${accountFilters.find((item) => item.key === filter)?.label.toLowerCase() ?? "matching"} accounts are linked.`}
+                          title="No accounts in this category"
+                        />
+                      </View>
+                    ) : null}
+                  </View>
+                </>
+              ) : null}
             </>
           )}
         </View>
       </ScrollView>
-    </View>
-  );
-}
-
-function BalanceSummaryCard({
-  paymentBalanceMinorUnits,
-  depositBalanceMinorUnits,
-  accountCount,
-  isVisible,
-  onToggleVisibility,
-}: {
-  paymentBalanceMinorUnits: number;
-  depositBalanceMinorUnits: number;
-  accountCount: number;
-  isVisible: boolean;
-  onToggleVisibility: () => void;
-}) {
-  const totalMinorUnits = paymentBalanceMinorUnits + depositBalanceMinorUnits;
-  return (
-    <View style={styles.summaryCard}>
-      <View style={styles.summaryHeader}>
-        <View>
-          <Text style={styles.summaryEyebrow}>Reported balances</Text>
-          <Text style={styles.summaryTitle}>{accountCount} linked accounts</Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={isVisible ? "Hide account balances" : "Show account balances"}
-          onPress={onToggleVisibility}
-          style={({ pressed }) => [styles.eyeButton, pressed && styles.pressed]}
-        >
-          <Ionicons name={isVisible ? "eye-outline" : "eye-off-outline"} size={20} color="#687386" />
-        </Pressable>
-      </View>
-      <View style={styles.totalBalanceRow}>
-        <Text style={styles.totalLabel}>Combined reported balance</Text>
-        <Text style={styles.totalValue}>
-          {isVisible ? formatIndianMinorUnits(totalMinorUnits) : "₹ ••••••••"}
-        </Text>
-      </View>
-      <View style={styles.breakdownRow}>
-        <BalanceBreakdown
-          label="Payment accounts"
-          value={paymentBalanceMinorUnits}
-          isVisible={isVisible}
-        />
-        <BalanceBreakdown
-          label="Deposits"
-          value={depositBalanceMinorUnits}
-          isVisible={isVisible}
-        />
-      </View>
-      <Text style={styles.summaryNote}>
-        Payment accounts are the only category shown as available to spend. Deposits are not immediately available.
-      </Text>
-    </View>
-  );
-}
-
-function BalanceBreakdown({ label, value, isVisible }: { label: string; value: number; isVisible: boolean }) {
-  return (
-    <View style={styles.breakdownItem}>
-      <Text style={styles.breakdownLabel}>{label}</Text>
-      <Text style={styles.breakdownValue}>{isVisible ? formatIndianMinorUnits(value) : "₹ •••••"}</Text>
-    </View>
-  );
-}
-
-function StateCard({
-  title,
-  description,
-  actionLabel,
-  onAction,
-  compact = false,
-}: {
-  title: string;
-  description: string;
-  actionLabel?: string;
-  onAction?: () => void;
-  compact?: boolean;
-}) {
-  return (
-    <View style={[styles.stateCard, compact && styles.compactStateCard]}>
-      <Text style={styles.stateTitle}>{title}</Text>
-      <Text style={styles.stateDescription}>{description}</Text>
-      {actionLabel && onAction ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onAction}
-          style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.retryButtonText}>{actionLabel}</Text>
-        </Pressable>
-      ) : null}
     </View>
   );
 }
@@ -331,121 +391,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: accountColors.background,
   },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
     width: "100%",
+    flexGrow: 1,
   },
   contentInner: {
     width: "100%",
     alignSelf: "center",
-    paddingTop: 24,
+    paddingTop: appSpacing.xxl,
   },
-  summaryCard: {
-    padding: 20,
-    borderRadius: 22,
-    backgroundColor: accountColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: accountColors.border,
-    ...softCardShadow,
-  },
-  summaryHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  summaryEyebrow: {
-    color: accountColors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "600",
-  },
-  summaryTitle: {
-    marginTop: 2,
-    color: accountColors.textPrimary,
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "700",
-  },
-  eyeButton: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 22,
-  },
-  totalBalanceRow: {
-    marginTop: 20,
-    paddingBottom: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: accountColors.divider,
-  },
-  totalLabel: {
-    color: accountColors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  totalValue: {
-    marginTop: 3,
-    color: accountColors.textPrimary,
-    fontSize: 29,
-    lineHeight: 36,
-    fontWeight: "700",
-  },
-  breakdownRow: {
-    flexDirection: "row",
-    columnGap: 16,
-    marginTop: 16,
-  },
-  breakdownItem: {
-    flex: 1,
-    minWidth: 0,
-  },
-  breakdownLabel: {
-    color: accountColors.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  breakdownValue: {
-    marginTop: 4,
-    color: accountColors.brandGreenDark,
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "700",
-  },
-  summaryNote: {
-    marginTop: 15,
-    color: accountColors.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  freshnessRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 11,
-    paddingHorizontal: 2,
-  },
-  sourceLabel: {
-    color: accountColors.brandGreenDark,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  freshnessLabel: {
-    color: accountColors.textSecondary,
-    fontSize: 12,
+  staleBanner: {
+    marginTop: appSpacing.md,
   },
   filterScroll: {
-    marginTop: 19,
-    marginHorizontal: -4,
+    marginTop: appSpacing.lg,
+    marginHorizontal: -appSpacing.xs,
   },
   filterContent: {
-    columnGap: 8,
-    paddingHorizontal: 4,
+    columnGap: appSpacing.sm,
+    paddingHorizontal: appSpacing.xs,
   },
   filterChip: {
-    minHeight: 40,
+    height: 42,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 17,
-    borderRadius: 20,
+    paddingHorizontal: appSpacing.lg,
+    borderRadius: appRadii.round,
     backgroundColor: accountColors.surface,
     borderWidth: 1,
     borderColor: accountColors.border,
@@ -457,74 +431,20 @@ const styles = StyleSheet.create({
   filterChipText: {
     color: accountColors.textSecondary,
     fontSize: 14,
+    lineHeight: 20,
     fontWeight: "600",
   },
   filterChipTextSelected: {
     color: "#FFFFFF",
   },
-  listGap: {
-    marginTop: 24,
+  listSection: {
+    marginTop: appSpacing.md,
   },
-  staleBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 8,
-    marginBottom: 14,
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: "#FFF4D8",
-  },
-  staleText: {
-    flex: 1,
-    color: "#73500D",
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  stateCard: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-    borderRadius: 22,
-    backgroundColor: accountColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: accountColors.border,
-  },
-  compactStateCard: {
-    marginTop: 24,
-  },
-  stateTitle: {
-    color: accountColors.textPrimary,
-    fontSize: 19,
-    lineHeight: 25,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  stateDescription: {
-    maxWidth: 320,
-    marginTop: 8,
-    color: accountColors.textSecondary,
-    fontSize: 14,
-    lineHeight: 21,
-    textAlign: "center",
-  },
-  retryButton: {
-    minHeight: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    columnGap: 8,
-    marginTop: 20,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    backgroundColor: accountColors.brandGreenDark,
-  },
-  retryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
+  filteredEmptyState: {
+    marginTop: appSpacing.xs,
   },
   pressed: {
-    opacity: 0.78,
+    opacity: 0.8,
+    transform: [{ scale: 0.98 }],
   },
 });

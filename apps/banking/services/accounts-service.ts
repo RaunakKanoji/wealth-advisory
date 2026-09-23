@@ -9,6 +9,7 @@ import {
   demoCustomerFixtures,
   getDemoCustomerFixture,
 } from "@/data/accounts-demo-data";
+import { buildAccountsOverview } from "@/lib/account-overview";
 import { formatIndianMinorUnits } from "@/lib/currency";
 import { getDemoPaymentActivities } from "@/services/demo-payment-ledger";
 import {
@@ -95,11 +96,14 @@ export type TransactionCsv = {
 };
 
 type StoredPreferences = {
+  balanceVisible?: boolean;
   accountPreferences: Record<string, AccountPreference>;
   annotations: Record<string, { category?: TransactionCategory; note?: string }>;
 };
 
 const inMemoryPreferences = new Map<string, StoredPreferences>();
+const preferenceWriteQueues = new Map<string, Promise<void>>();
+const balanceVisibilityListeners = new Map<string, Set<(visible: boolean) => void>>();
 
 export const TRANSACTION_CATEGORIES: TransactionCategory[] = [
   "salary",
@@ -182,8 +186,10 @@ function parsePreferences(value: string | null): StoredPreferences {
     const record = parsed as Record<string, unknown>;
     const accountPreferences = record.accountPreferences;
     const annotations = record.annotations;
+    const balanceVisible = record.balanceVisible;
 
     return {
+      balanceVisible: typeof balanceVisible === "boolean" ? balanceVisible : undefined,
       accountPreferences:
         accountPreferences && typeof accountPreferences === "object"
           ? (accountPreferences as Record<string, AccountPreference>)
@@ -225,22 +231,32 @@ async function loadPreferences(customerId?: string | null): Promise<StoredPrefer
   }
 }
 
-async function persistPreferences(customerId: string, preferences: StoredPreferences) {
+async function persistPreferences(customerId: string, preferences: StoredPreferences, options?: { throwOnStorageError?: boolean }) {
   const scopedCustomerId = getCustomerScope(customerId);
   inMemoryPreferences.set(scopedCustomerId, preferences);
-
-  try {
-    await SecureStore.setItemAsync(preferenceKey(scopedCustomerId), JSON.stringify(preferences));
-  } catch {
-    // The in-memory value keeps the current session usable. A real backend
-    // adapter should persist this customer-owned data server-side.
-  }
-  if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+  const previousWrite = preferenceWriteQueues.get(scopedCustomerId) ?? Promise.resolve();
+  const nextWrite = previousWrite.catch(() => undefined).then(async () => {
+    let storageError: unknown;
     try {
-      localStorage.setItem(preferenceKey(scopedCustomerId), JSON.stringify(preferences));
-    } catch {
-      // Browser storage may be disabled; the in-memory value still works.
+      await SecureStore.setItemAsync(preferenceKey(scopedCustomerId), JSON.stringify(preferences));
+    } catch (error) {
+      storageError = error;
     }
+    if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem(preferenceKey(scopedCustomerId), JSON.stringify(preferences));
+        storageError = undefined;
+      } catch (error) {
+        storageError ??= error;
+      }
+    }
+    if (storageError && options?.throwOnStorageError) throw storageError;
+  });
+  preferenceWriteQueues.set(scopedCustomerId, nextWrite);
+  try {
+    await nextWrite;
+  } finally {
+    if (preferenceWriteQueues.get(scopedCustomerId) === nextWrite) preferenceWriteQueues.delete(scopedCustomerId);
   }
 }
 
@@ -301,6 +317,14 @@ export async function getAccounts(options?: { customerId?: string | null; signal
   });
 }
 
+/** Canonical product-aware payload used by the local/demo Accounts experience. */
+export async function getAccountsOverview(options?: {
+  customerId?: string | null;
+  signal?: AbortSignal;
+}) {
+  return buildAccountsOverview(await getAccounts(options));
+}
+
 export async function getAccount(
   accountId: string,
   options?: { customerId?: string | null; signal?: AbortSignal },
@@ -323,7 +347,38 @@ export async function getAccountPreference(
   }
 
   const preferences = await loadPreferences(options?.customerId);
-  return preferences.accountPreferences[accountId] ?? { balanceVisible: true };
+  return {
+    ...preferences.accountPreferences[accountId],
+    balanceVisible: preferences.balanceVisible
+      ?? preferences.accountPreferences[accountId]?.balanceVisible
+      ?? true,
+  };
+}
+
+export async function getBalanceVisibility(options?: { customerId?: string | null }): Promise<boolean> {
+  const preferences = await loadPreferences(options?.customerId);
+  return preferences.balanceVisible
+    ?? Object.values(preferences.accountPreferences).every((preference) => preference.balanceVisible !== false);
+}
+
+export function subscribeBalanceVisibility(
+  listener: (visible: boolean) => void,
+  options?: { customerId?: string | null },
+): () => void {
+  const scopedCustomerId = getCustomerScope(options?.customerId);
+  const listeners = balanceVisibilityListeners.get(scopedCustomerId) ?? new Set();
+  listeners.add(listener);
+  balanceVisibilityListeners.set(scopedCustomerId, listeners);
+
+  return () => {
+    const currentListeners = balanceVisibilityListeners.get(scopedCustomerId);
+    currentListeners?.delete(listener);
+    if (currentListeners?.size === 0) balanceVisibilityListeners.delete(scopedCustomerId);
+  };
+}
+
+function notifyBalanceVisibility(customerId: string, visible: boolean): void {
+  balanceVisibilityListeners.get(getCustomerScope(customerId))?.forEach((listener) => listener(visible));
 }
 
 export async function updateAccountPreference(
@@ -347,8 +402,8 @@ export async function updateAccountPreference(
 
   const preferences = await loadPreferences(scopedCustomerId);
   const nextPreferences: StoredPreferences = {
+    ...preferences,
     accountPreferences: { ...preferences.accountPreferences },
-    annotations: preferences.annotations,
   };
   const current = nextPreferences.accountPreferences[accountId] ?? {};
   nextPreferences.accountPreferences[accountId] = {
@@ -374,11 +429,18 @@ export async function updateAccountPreference(
 }
 
 export async function updateBalanceVisibility(
-  accountId: string,
+  _accountId: string | undefined,
   visible: boolean,
   options?: { customerId?: string | null },
-) {
-  return updateAccountPreference(accountId, { balanceVisible: visible }, options);
+): Promise<void> {
+  const scopedCustomerId = getCustomerScope(options?.customerId);
+  const preferences = await loadPreferences(scopedCustomerId);
+  const write = persistPreferences(scopedCustomerId, {
+    ...preferences,
+    balanceVisible: visible,
+  }, { throwOnStorageError: true });
+  notifyBalanceVisibility(scopedCustomerId, visible);
+  await write;
 }
 
 export function normalizeTransactionFilters(input?: TransactionFilters): NormalizedTransactionFilters {
@@ -491,7 +553,7 @@ function calculateSummary(
   filters: NormalizedTransactionFilters,
 ): TransactionSummary {
   const postedTransactions = transactions.filter(
-    (transaction) => transaction.status === "posted" || transaction.status === "reversed",
+    (transaction) => transaction.status === "posted",
   );
   const moneyInMinorUnits = postedTransactions
     .filter((transaction) => transaction.direction === "credit")
@@ -501,12 +563,12 @@ function calculateSummary(
     .reduce((total, transaction) => total + transaction.amountMinorUnits, 0);
 
   const scopeLabel = filters.period === "this-month"
-    ? "This month · posted and reversed"
+    ? "This month · posted"
     : filters.period === "last-month"
-      ? "Last month · posted and reversed"
+      ? "Last month · posted"
       : filters.fromDate || filters.toDate
-        ? `${filters.fromDate ?? "Start"} to ${filters.toDate ?? "End"} · posted and reversed`
-        : "All available demo history · posted and reversed";
+        ? `${filters.fromDate ?? "Start"} to ${filters.toDate ?? "End"} · posted`
+        : "All available history · posted";
 
   return {
     moneyInMinorUnits,
@@ -514,7 +576,7 @@ function calculateSummary(
     netMovementMinorUnits: moneyInMinorUnits - moneyOutMinorUnits,
     includedTransactionCount: postedTransactions.length,
     scopeLabel,
-    coverageLabel: "Complete for the demo scenario; pending and failed rows excluded from totals",
+    coverageLabel: "Posted transactions only",
   };
 }
 
@@ -665,7 +727,7 @@ export async function updateTransactionAnnotation(
   const preferences = await loadPreferences(scopedCustomerId);
   const current = preferences.annotations[transactionId] ?? {};
   const nextPreferences: StoredPreferences = {
-    accountPreferences: preferences.accountPreferences,
+    ...preferences,
     annotations: {
       ...preferences.annotations,
       [transactionId]: {

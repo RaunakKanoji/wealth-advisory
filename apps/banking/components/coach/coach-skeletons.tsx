@@ -1,88 +1,102 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
 
-import { coachColors } from "./tokens";
+import { Skeleton, useSkeletonPulse } from "@/components/skeleton";
+import { appSpacing } from "@/components/theme/tokens";
 
 export function CoachSkeletons() {
+  const opacity = useSkeletonPulse();
+
   return (
-    <View accessible accessibilityLabel="Loading Wealth Coach insights">
-      <View style={styles.snapshot}>
-        <View style={styles.metricsRow}>
-          <View style={styles.metric} />
-          <View style={styles.metric} />
-          <View style={styles.metric} />
-        </View>
-        <View style={styles.action} />
+    <View accessible accessibilityLabel="Loading Wealth Coach" accessibilityState={{ busy: true }}>
+      <Skeleton opacity={opacity} style={styles.composerBlock} />
+
+      <Skeleton opacity={opacity} style={styles.topicTitle} />
+      <View style={styles.topicRow}>
+        <Skeleton opacity={opacity} style={[styles.topicBlock, styles.topicBlockWide]} />
+        <Skeleton opacity={opacity} style={styles.topicBlock} />
+        <Skeleton opacity={opacity} style={styles.topicBlock} />
       </View>
 
-      <View style={styles.sectionTitle} />
-      <View style={styles.insightCard} />
-      <View style={styles.insightCard} />
-      <View style={styles.insightCard} />
+      <Skeleton opacity={opacity} style={styles.summaryBlock} />
 
-      <View style={[styles.sectionTitle, styles.recommendationTitle]} />
-      <View style={styles.recommendationsRow}>
-        <View style={styles.recommendationCard} />
-        <View style={styles.recommendationCard} />
-        <View style={styles.recommendationCard} />
+      <SectionSkeleton opacity={opacity} cardHeights={[132, 132]} />
+      <SectionSkeleton opacity={opacity} cardHeights={[116, 116]} />
+      <SectionSkeleton opacity={opacity} cardHeights={[258]} />
+    </View>
+  );
+}
+
+function SectionSkeleton({ opacity, cardHeights }: { opacity: ReturnType<typeof useSkeletonPulse>; cardHeights: number[] }) {
+  return (
+    <View style={styles.sectionSkeleton}>
+      <View style={styles.sectionHeaderRow}>
+        <Skeleton opacity={opacity} style={styles.sectionTitleBlock} />
+        <Skeleton opacity={opacity} style={styles.sectionActionBlock} />
+      </View>
+      <View style={styles.sectionCards}>
+        {cardHeights.map((height, index) => <Skeleton key={`${height}-${index}`} opacity={opacity} style={[styles.sectionBlock, { height }]} />)}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  snapshot: {
-    padding: 20,
-    borderRadius: 26,
-    backgroundColor: coachColors.brandGreenSoft,
-    borderWidth: 1,
-    borderColor: coachColors.brandGreenBorder,
-  },
-  metricsRow: {
-    flexDirection: "row",
-    columnGap: 10,
-  },
-  metric: {
-    flex: 1,
-    height: 142,
+  composerBlock: {
+    width: "100%",
+    height: 152,
     borderRadius: 20,
-    backgroundColor: coachColors.surface,
   },
-  action: {
-    height: 58,
-    marginTop: 24,
-    borderRadius: 16,
-    backgroundColor: coachColors.divider,
-  },
-  sectionTitle: {
-    width: "48%",
+  topicTitle: {
+    width: 146,
     height: 24,
-    marginTop: 30,
-    borderRadius: 6,
-    backgroundColor: coachColors.divider,
+    marginTop: appSpacing.xxl,
+    borderRadius: 7,
   },
-  insightCard: {
-    height: 116,
-    marginTop: 14,
-    borderRadius: 22,
-    backgroundColor: coachColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: coachColors.border,
-  },
-  recommendationTitle: {
-    marginTop: 30,
-  },
-  recommendationsRow: {
+  topicRow: {
     flexDirection: "row",
-    columnGap: 14,
-    marginTop: 18,
+    columnGap: appSpacing.sm,
+    marginTop: appSpacing.md,
+    overflow: "hidden",
   },
-  recommendationCard: {
-    width: 154,
-    height: 182,
+  topicBlock: {
+    width: 94,
+    height: 44,
     borderRadius: 22,
-    backgroundColor: coachColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: coachColors.border,
+  },
+  topicBlockWide: {
+    width: 112,
+  },
+  summaryBlock: {
+    width: "100%",
+    height: 180,
+    marginTop: appSpacing.xxl,
+    borderRadius: 20,
+  },
+  sectionSkeleton: {
+    marginTop: 28,
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitleBlock: {
+    width: "42%",
+    height: 22,
+    borderRadius: 7,
+  },
+  sectionActionBlock: {
+    width: 54,
+    height: 16,
+    borderRadius: 5,
+  },
+  sectionCards: {
+    marginTop: appSpacing.md,
+    rowGap: appSpacing.md,
+  },
+  sectionBlock: {
+    width: "100%",
+    borderRadius: 16,
   },
 });

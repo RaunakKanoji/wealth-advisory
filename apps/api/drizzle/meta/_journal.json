@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789146646041,
+      "tag": "0000_keen_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789199122250,
+      "tag": "0001_nervous_rhino",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789210000000,
+      "tag": "0002_aa_consent_pipeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790000000000,
+      "tag": "0003_coach_query_pipeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790000000001,
+      "tag": "0004_coach_source_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790095000000,
+      "tag": "0005_wealth_analytics",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790095000001,
+      "tag": "0006_wealth_analytics_card_dedupe",
+      "breakpoints": true
+    }
+  ]
+}

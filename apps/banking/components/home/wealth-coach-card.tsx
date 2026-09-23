@@ -3,13 +3,25 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { WealthInsight } from "../../types/banking";
+import { SectionHeader, Surface } from "@/components/design-system";
+import { appColors } from "@/components/theme/tokens";
+import { privacySafeFinancialText } from "@/lib/privacy";
 
 type WealthCoachCardProps = {
   insight: WealthInsight;
+  balanceVisible: boolean;
 };
 
-export default function WealthCoachCard({ insight }: WealthCoachCardProps) {
+export default function WealthCoachCard({ insight, balanceVisible }: WealthCoachCardProps) {
   const router = useRouter();
+  const insightTitle = balanceVisible
+    ? insight.title
+    : privacySafeFinancialText(insight.title, "Financial insight");
+  const comparisonLabel = insight.comparisonLabel
+    ? balanceVisible
+      ? insight.comparisonLabel
+      : privacySafeFinancialText(insight.comparisonLabel, "Comparison hidden")
+    : undefined;
 
   const handlePressAction = () => {
     // Navigate to the Tab coach route
@@ -17,14 +29,11 @@ export default function WealthCoachCard({ insight }: WealthCoachCardProps) {
   };
 
   return (
-    <View style={styles.card}>
-      {/* Header Row */}
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>Wealth Coach</Text>
-        <View style={styles.betaBadge}>
-          <Text style={styles.betaText}>BETA</Text>
-        </View>
-      </View>
+    <Surface style={styles.card}>
+      <SectionHeader
+        title="Wealth Coach"
+        action={<View style={styles.betaBadge}><Text style={styles.betaText}>BETA</Text></View>}
+      />
 
       {/* Inset Insight Panel */}
       <View style={styles.insetPanel}>
@@ -32,10 +41,10 @@ export default function WealthCoachCard({ insight }: WealthCoachCardProps) {
           <View style={styles.iconContainer}>
             <Ionicons name="trending-up" size={20} color="#FFFFFF" />
           </View>
-          <Text style={styles.insightText}>{insight.title}</Text>
+          <Text style={styles.insightText}>{insightTitle}</Text>
         </View>
-        {insight.comparisonLabel && (
-          <Text style={styles.comparisonText}>{insight.comparisonLabel}</Text>
+        {comparisonLabel && (
+          <Text style={styles.comparisonText}>{comparisonLabel}</Text>
         )}
       </View>
 
@@ -52,59 +61,31 @@ export default function WealthCoachCard({ insight }: WealthCoachCardProps) {
         <Text style={styles.actionText}>View More Insights</Text>
         <Ionicons name="chevron-forward" size={16} color="#00866A" style={styles.chevron} />
       </Pressable>
-    </View>
+    </Surface>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
     paddingHorizontal: 22,
-    paddingTop: 24,
+    paddingTop: 14,
     paddingBottom: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#F0F1F3",
-    // Premium soft card shadow
-    shadowColor: "#111827",
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  title: {
-    fontSize: 23,
-    fontWeight: "700",
-    color: "#111827",
   },
   betaBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: "#E6F3EF",
-    marginLeft: 8,
+    backgroundColor: appColors.primarySoft,
   },
   betaText: {
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.4,
-    color: "#00866A",
+    color: appColors.primary,
   },
   insetPanel: {
-    marginTop: 16,
-    borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 20,
-    backgroundColor: "#FFFFFF",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#EDF0F2",
+    marginTop: 6,
+    paddingVertical: 8,
   },
   insightContent: {
     flexDirection: "row",
@@ -114,7 +95,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "#00866A",
+    backgroundColor: appColors.primary,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 14,
@@ -123,16 +104,17 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 23,
     fontWeight: "500",
-    color: "#111827",
+    color: appColors.textPrimary,
     flex: 1,
   },
   comparisonText: {
     fontSize: 14,
-    color: "#9CA3AF",
+    color: appColors.textSecondary,
     marginTop: 12,
     marginLeft: 52, // Align text underneath the insight text (width of icon 38 + margin 14)
   },
   actionLink: {
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -145,7 +127,7 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#00866A",
+    color: appColors.primary,
   },
   chevron: {
     marginLeft: 4,

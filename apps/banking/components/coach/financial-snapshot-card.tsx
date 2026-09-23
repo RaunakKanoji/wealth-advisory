@@ -1,96 +1,151 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
-import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
-import type { FinancialMetric } from "@/types/wealth-coach";
-
-import { AskCoachButton } from "./ask-coach-button";
-import { FinancialMetricCard } from "./financial-metric-card";
-import { coachColors } from "./tokens";
+import { Surface } from "@/components/design-system";
+import { appColors, appRadii, appSpacing, appTypography } from "@/components/theme/tokens";
+import { formatIndianMinorUnits } from "@/lib/currency";
 
 type FinancialSnapshotCardProps = {
-  metrics: FinancialMetric[];
-  onAskCoach: () => void;
+  balanceSummary: {
+    totalBalanceMinorUnits: number;
+    availableToSpendMinorUnits: number;
+    depositsMinorUnits: number;
+  };
+  balanceVisible?: boolean;
+  onAskCoach?: () => void;
 };
 
-export function FinancialSnapshotCard({
-  metrics,
-  onAskCoach,
-}: FinancialSnapshotCardProps) {
-  const { width } = useWindowDimensions();
-  const isSmall = width < 375;
-  const isWide = width >= 600;
+export function FinancialSnapshotCard({ balanceSummary, balanceVisible = true, onAskCoach }: FinancialSnapshotCardProps) {
+  const { width, fontScale } = useWindowDimensions();
+  const stackSupportingMetrics = width < 360 || fontScale > 1.25;
 
   return (
-    <View style={[styles.card, isSmall && styles.cardSmall, isWide && styles.cardWide]}>
-      <View
-        style={[
-          styles.metricsRow,
-          isSmall && styles.metricsRowSmall,
-          isWide && styles.metricsRowWide,
-        ]}
-      >
-        {metrics.map((metric) => (
-          <FinancialMetricCard key={metric.id} metric={metric} />
-        ))}
+    <Surface variant="brand" style={styles.card}>
+      <View style={styles.periodRow}>
+        <View style={styles.periodCopy}>
+          <Text style={styles.periodTitle}>Total Balance</Text>
+        </View>
       </View>
 
-      <View style={[styles.actionContainer, isWide && styles.actionContainerWide]}>
-        <AskCoachButton onPress={onAskCoach} large={isWide} />
-        <Text style={[styles.actionCaption, isWide && styles.actionCaptionWide]}>
-          Get personalised insights and tips
-        </Text>
+      <View style={styles.metricsBlock}>
+        <View accessible accessibilityLabel={`Total Balance, ${formatBalanceValue(balanceSummary.totalBalanceMinorUnits, balanceVisible)}`} style={styles.primaryMetric}>
+          <Text adjustsFontSizeToFit minimumFontScale={0.82} numberOfLines={1} style={styles.primaryValue}>
+            {formatBalanceValue(balanceSummary.totalBalanceMinorUnits, balanceVisible)}
+          </Text>
+        </View>
+        <View style={[styles.supportingMetrics, stackSupportingMetrics && styles.supportingMetricsStacked]}>
+          <BalanceMetric value={balanceSummary.availableToSpendMinorUnits} label="Available" balanceVisible={balanceVisible} />
+          <BalanceMetric value={balanceSummary.depositsMinorUnits} label="Deposits" balanceVisible={balanceVisible} />
+        </View>
       </View>
+
+      {onAskCoach ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ask Wealth Coach about this month"
+          onPress={onAskCoach}
+          style={({ pressed }) => [styles.askAction, pressed && styles.askActionPressed]}
+        >
+          <Text style={styles.askActionText}>Ask Coach about this month</Text>
+          <Ionicons name="arrow-forward" size={17} color={appColors.surface} />
+        </Pressable>
+      ) : null}
+    </Surface>
+  );
+}
+
+function BalanceMetric({ value, label, balanceVisible }: { value: number; label: string; balanceVisible: boolean }) {
+  const formattedValue = formatBalanceValue(value, balanceVisible);
+  return (
+    <View accessible accessibilityLabel={`${label}, ${formattedValue}`} style={styles.supportingMetric}>
+      <Text adjustsFontSizeToFit minimumFontScale={0.85} numberOfLines={1} style={styles.supportingValue}>
+        {formattedValue}
+      </Text>
+      <Text style={styles.supportingLabel}>{label}</Text>
     </View>
   );
 }
 
+function formatBalanceValue(minorUnits: number, balanceVisible: boolean): string {
+  return balanceVisible ? formatIndianMinorUnits(minorUnits) : "₹ ••••••••";
+}
+
 const styles = StyleSheet.create({
   card: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 22,
-    borderRadius: 26,
-    backgroundColor: "#F0F8F6",
-    borderWidth: 1,
-    borderColor: coachColors.brandGreenBorder,
+    paddingHorizontal: appSpacing.xl,
+    paddingTop: 18,
+    paddingBottom: 8,
+    borderRadius: appRadii.card,
   },
-  cardSmall: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
-  },
-  cardWide: {
-    paddingHorizontal: 42,
-    paddingTop: 42,
-    paddingBottom: 42,
-    borderRadius: 32,
-    borderColor: "#D3E9E2",
-  },
-  metricsRow: {
+  periodRow: {
     flexDirection: "row",
-    columnGap: 10,
+    alignItems: "flex-start",
+    justifyContent: "space-between",
   },
-  metricsRowSmall: {
-    columnGap: 7,
+  periodCopy: {
+    flex: 1,
+    minWidth: 0,
   },
-  metricsRowWide: {
-    columnGap: 18,
+  periodTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
   },
-  actionContainer: {
-    marginTop: 24,
+  metricsBlock: {
+    marginTop: appSpacing.lg,
   },
-  actionContainerWide: {
-    marginTop: 42,
+  primaryMetric: {
+    minWidth: 0,
   },
-  actionCaption: {
-    marginTop: 14,
-    color: "#768091",
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
+  primaryValue: {
+    color: "#FFFFFF",
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: "700",
   },
-  actionCaptionWide: {
-    marginTop: 28,
-    fontSize: 21,
-    lineHeight: 27,
+  supportingMetric: {
+    flex: 1,
+    minWidth: 0,
+  },
+  supportingMetrics: {
+    flexDirection: "row",
+    columnGap: appSpacing.xl,
+    marginTop: appSpacing.md,
+  },
+  supportingMetricsStacked: {
+    flexDirection: "column",
+    rowGap: appSpacing.sm,
+  },
+  supportingLabel: {
+    marginTop: 1,
+    color: "#FFFFFF",
+    ...appTypography.metadata,
+  },
+  supportingValue: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: appTypography.amount.fontWeight,
+  },
+  askAction: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingHorizontal: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255,255,255,0.24)",
+  },
+  askActionPressed: {
+    opacity: 0.72,
+  },
+  askActionText: {
+    color: appColors.surface,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
   },
 });

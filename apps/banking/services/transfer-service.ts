@@ -268,7 +268,10 @@ function snapshotFromInput(input: BeneficiaryInput, lookupReference: string): { 
     "unknown@demo": "Demo Status-Unknown Recipient",
     "return@demo": "Demo Return Recipient",
   };
-  const resolvedName = knownNames[upiId] ?? (upiId.endsWith("@demo") ? recipientName ?? upiId.split("@")[0] : undefined);
+  // The demo provider returns a deterministic display name for any valid UPI
+  // address. Special demo aliases still make it possible to exercise pending,
+  // failed, unknown, and returned result states without real payment traffic.
+  const resolvedName = knownNames[upiId] ?? recipientName ?? upiId.split("@")[0];
   const stored: StoredBeneficiary = {
     id: id("beneficiary"),
     customerId: "",
