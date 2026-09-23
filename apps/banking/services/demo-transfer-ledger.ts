@@ -174,6 +174,7 @@ export async function getDemoTransferLedgerTransactions(customerId: string, acco
       originalCategory: "transfer" as const,
       reference: entry.reference,
       linkedTransactionId: entry.linkedEntryId,
+      activityGroupId: entry.groupId,
       sourceEnvironment: "Demo data" as const,
     }));
 }

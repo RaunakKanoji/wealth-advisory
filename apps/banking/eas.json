@@ -1,0 +1,39 @@
+{
+  "cli": {
+    "version": ">= 24.0.0"
+  },
+  "build": {
+    "appetize": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "preview",
+        "EXPO_PUBLIC_DEMO_MODE": "true",
+        "EXPO_PUBLIC_USE_MOCK_DATA": "true",
+        "EXPO_PUBLIC_ALLOW_DEMO_AUTH": "true",
+        "EXPO_PUBLIC_DEMO_AUTH_ID": "demo-customer-a",
+        "EXPO_PUBLIC_REMOTE_COACH_ENABLED": "false",
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_Z3JlYXQtZG9yeS0xOC5jbGVyay5hY2NvdW50cy5kZXYk"
+      }
+    },
+    "appetize-ios": {
+      "distribution": "internal",
+      "developmentClient": false,
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "preview",
+        "EXPO_PUBLIC_DEMO_MODE": "true",
+        "EXPO_PUBLIC_USE_MOCK_DATA": "true",
+        "EXPO_PUBLIC_ALLOW_DEMO_AUTH": "true",
+        "EXPO_PUBLIC_DEMO_AUTH_ID": "demo-customer-a",
+        "EXPO_PUBLIC_REMOTE_COACH_ENABLED": "false",
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_Z3JlYXQtZG9yeS0xOC5jbGVyay5hY2NvdW50cy5kZXYk"
+      }
+    }
+  }
+}

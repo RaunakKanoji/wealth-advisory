@@ -1,32 +1,47 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
-import type { BankAccount } from "@/types/banking";
+import { SectionHeader } from "@/components/design-system";
+import { appSpacing } from "@/components/theme/tokens";
+import type {
+  AccountOverviewAction,
+  AccountOverviewItem,
+  BankAccount,
+} from "@/types/banking";
 
 import { AccountListItem } from "./account-list-item";
-import { accountColors } from "./tokens";
 
 type AccountsListCardProps = {
-  accounts: BankAccount[];
+  accounts: AccountOverviewItem[];
   onAccountPress: (account: BankAccount) => void;
+  onActionPress?: (account: BankAccount, action: AccountOverviewAction) => void;
+  isBalanceVisible: boolean;
   title?: string;
 };
+
+export type AccountCardAction = AccountOverviewAction;
 
 export function AccountsListCard({
   accounts,
   onAccountPress,
+  onActionPress,
+  isBalanceVisible,
   title = "Accounts",
 }: AccountsListCardProps) {
   return (
     <View>
-      <Text style={styles.title}>{title} ({accounts.length})</Text>
-      <View style={styles.card}>
-        {accounts.map((account, index) => (
+      <SectionHeader
+        style={styles.titleRow}
+        title={title}
+      />
+      <View style={styles.listGap}>
+        {accounts.map((account) => (
           <AccountListItem
             key={account.id}
             account={account}
-            isLast={index === accounts.length - 1}
-            onPress={() => onAccountPress(account)}
+            isBalanceVisible={isBalanceVisible}
+            onPress={() => onAccountPress(account.account)}
+            onActionPress={(action) => onActionPress?.(account.account, action)}
           />
         ))}
       </View>
@@ -35,23 +50,10 @@ export function AccountsListCard({
 }
 
 const styles = StyleSheet.create({
-  title: {
-    marginBottom: 14,
-    color: accountColors.textPrimary,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: "700",
+  titleRow: {
+    marginBottom: appSpacing.sm,
   },
-  card: {
-    overflow: "hidden",
-    borderRadius: 24,
-    backgroundColor: accountColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: accountColors.border,
-    shadowColor: "#111827",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+  listGap: {
+    rowGap: appSpacing.md,
   },
 });

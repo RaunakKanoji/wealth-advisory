@@ -10,7 +10,8 @@ import {
   getDemoCardTransactions,
   getDemoCards,
 } from "@/data/cards-demo-data";
-import { getAccount } from "@/services/accounts-service";
+import { getAccount, TRANSACTION_CATEGORIES } from "@/services/accounts-service";
+import type { TransactionCategory } from "@/types/banking";
 import type {
   CardCapabilitySet,
   CardChannel,
@@ -42,6 +43,7 @@ type StoredCardState = {
   lifecycleStatuses: Record<string, CardLifecycleStatus>;
   revisions: Record<string, number>;
   operations: CardControlOperation[];
+  annotations: Record<string, { category?: TransactionCategory; note?: string }>;
 };
 
 const inMemoryState = new Map<string, StoredCardState>();
@@ -56,6 +58,7 @@ function emptyState(): StoredCardState {
     lifecycleStatuses: {},
     revisions: {},
     operations: [],
+    annotations: {},
   };
 }
 
@@ -108,6 +111,9 @@ function parseState(value: string | null): StoredCardState {
       lifecycleStatuses: recordOfStrings(parsed.lifecycleStatuses) as Record<string, CardLifecycleStatus>,
       revisions: recordOfNumbers(parsed.revisions),
       operations,
+      annotations: isRecord(parsed.annotations)
+        ? Object.fromEntries(Object.entries(parsed.annotations).filter(([, item]) => isRecord(item))) as Record<string, { category?: TransactionCategory; note?: string }>
+        : {},
     };
   } catch {
     return emptyState();
@@ -185,6 +191,11 @@ function applyStoredState(card: CardRecord, state: StoredCardState): CardRecord 
     controls: hydratedControls,
     limits: hydratedLimits,
   };
+}
+
+function applyTransactionAnnotation(transaction: CardTransaction, state: StoredCardState): CardTransaction {
+  const annotation = state.annotations[transaction.id];
+  return annotation ? { ...transaction, annotation } : transaction;
 }
 
 function getBaseCard(cardId: string, customerId?: string | null): CardRecord | undefined {
@@ -337,9 +348,10 @@ export async function getCardTransactions(
 ): Promise<CardTransactionPage> {
   const { customerId } = await requireCard(cardId, options?.customerId);
   const filters = normalizeCardTransactionFilters(options?.filters);
+  const state = await loadState(customerId);
   const all = canonicalizeTransactions(
     getDemoCardTransactions(fixtureCustomerId(customerId)).filter((item) => item.cardId === cardId),
-  );
+  ).map((item) => applyTransactionAnnotation(item, state));
   const matching = sortTransactions(all.filter((item) => transactionMatches(item, filters)));
   const pageSize = Math.min(20, Math.max(1, Math.floor(options?.pageSize ?? DEFAULT_PAGE_SIZE)));
   const totalPages = Math.max(1, Math.ceil(matching.length / pageSize));
@@ -363,9 +375,34 @@ export async function getCardTransaction(
   options?: { customerId?: string | null },
 ): Promise<CardTransaction | undefined> {
   await requireCard(cardId, options?.customerId);
+  const state = await loadState(options?.customerId);
   return canonicalizeTransactions(
     getDemoCardTransactions(fixtureCustomerId(options?.customerId)).filter((item) => item.cardId === cardId),
-  ).find((item) => item.id === transactionId);
+  ).map((item) => applyTransactionAnnotation(item, state)).find((item) => item.id === transactionId);
+}
+
+export async function updateCardTransactionAnnotation(
+  cardId: string,
+  transactionId: string,
+  patch: { category?: TransactionCategory; note?: string },
+  options?: { customerId?: string | null },
+): Promise<CardTransaction> {
+  const result = await requireCard(cardId, options?.customerId);
+  const transaction = await getCardTransaction(cardId, transactionId, { customerId: result.customerId });
+  if (!transaction) throw new Error("Card transaction unavailable");
+  if (patch.category !== undefined && !TRANSACTION_CATEGORIES.includes(patch.category)) {
+    throw new Error("Choose a valid transaction category");
+  }
+  if (patch.note !== undefined && patch.note.trim().length > 240) {
+    throw new Error("Note must be 240 characters or fewer");
+  }
+  result.state.annotations[transactionId] = {
+    ...(result.state.annotations[transactionId] ?? {}),
+    category: patch.category ?? result.state.annotations[transactionId]?.category,
+    note: patch.note === undefined ? result.state.annotations[transactionId]?.note : patch.note.trim() || undefined,
+  };
+  await saveState(result.customerId, result.state);
+  return (await getCardTransaction(cardId, transactionId, { customerId: result.customerId })) as CardTransaction;
 }
 
 export async function updateCardNickname(

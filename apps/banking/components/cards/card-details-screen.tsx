@@ -1,6 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useUser } from "@clerk/expo";
-import { useFocusEffect } from "@react-navigation/native";
+import { useAuth, useUser } from "@clerk/expo";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -19,10 +18,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useBalanceVisibility } from "@/components/accounts/use-balance-visibility";
 import { PaymentCardPreview, cardStatusLabel } from "@/components/cards/payment-card-preview";
 import { DEMO_CUSTOMER_A } from "@/data/accounts-demo-data";
-import { formatIndianMinorUnits } from "@/lib/currency";
+import { formatIndianMinorUnits, formatTransactionAmount } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
+import { getRemoteAccount, getRemoteCard, getRemoteCardTransactions, updateRemoteCardControls, updateRemoteCardStatus, blockRemoteCard, updateRemoteCardNickname } from "@/lib/api/cards";
+import { isFinancialAuthReady, isRemoteDataEnabled } from "@/lib/env";
+import { useStableGetToken } from "@/lib/api/use-stable-get-token";
+import { apiAccountToBankAccount, apiCardToCardRecord, apiCardTransactionsToPage } from "@/lib/api/view-models";
 import {
   checkCardOperationStatus,
   formatLimitInput,
@@ -30,6 +34,7 @@ import {
   getCardFundingSummary,
   getCardTransactions,
   getCardControlDescription,
+  normalizeCardTransactionFilters,
   parseLimitInput,
   reportCardLostOrStolen,
   updateCardChannelState,
@@ -37,18 +42,20 @@ import {
   updateCardMasterState,
   updateCardNickname,
 } from "@/services/cards-service";
-import { getAccountPreference } from "@/services/accounts-service";
+import { updateBalanceVisibility } from "@/services/accounts-service";
 import type {
   CardChannelGroup,
   CardControl,
   CardControlOperation,
   CardMasterState,
+  CardOperationKind,
   CardRecord,
   CardTransaction,
   CardTransactionFilters,
   CardTransactionPage,
   CardTransactionType,
 } from "@/types/cards";
+import { appColors } from "@/components/theme/tokens";
 
 type DetailsSection = "activity" | "controls" | "details" | "billing";
 type LoadState = "loading" | "ready" | "error";
@@ -68,19 +75,19 @@ const initialFilters: CardTransactionFilters = {
 };
 
 const colors = {
-  background: "#F7F8FA",
-  surface: "#FFFFFF",
-  text: "#111827",
-  secondary: "#6F7888",
-  muted: "#98A1AE",
-  green: "#007E5D",
-  greenDark: "#006647",
-  greenSoft: "#E9F5F2",
-  orange: "#F45B2A",
-  orangeSoft: "#FFF2EA",
-  border: "#E8EBEF",
-  danger: "#A62B32",
-  dangerSoft: "#FDECEC",
+  background: appColors.background,
+  surface: appColors.surface,
+  text: appColors.textPrimary,
+  secondary: appColors.textSecondary,
+  muted: appColors.textMuted,
+  green: appColors.primary,
+  greenDark: appColors.primaryPressed,
+  greenSoft: appColors.primarySoft,
+  orange: appColors.orangeText,
+  orangeSoft: appColors.warningSoft,
+  border: appColors.border,
+  danger: appColors.danger,
+  dangerSoft: appColors.dangerSoft,
 };
 
 function firstParam(value: string | string[] | undefined): string | undefined {
@@ -127,10 +134,17 @@ function LoadingScreen() {
 }
 
 export function CardDetailsScreen() {
+  const { user } = useUser();
+  return <CardDetailsScreenContent key={user?.id ?? DEMO_CUSTOMER_A} />;
+}
+
+function CardDetailsScreenContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { user } = useUser();
+  const { user, isLoaded: isUserLoaded } = useUser();
+  const { getToken: clerkGetToken, isLoaded: isAuthLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const getToken = useStableGetToken(clerkGetToken);
   const { cardId: rawCardId, section: rawSection, fromAccountId: rawFromAccountId } = useLocalSearchParams<{
     cardId?: string | string[];
     section?: string | string[];
@@ -139,6 +153,7 @@ export function CardDetailsScreen() {
   const cardId = firstParam(rawCardId);
   const fromAccountId = firstParam(rawFromAccountId);
   const customerId = user?.id ?? DEMO_CUSTOMER_A;
+  const { balanceVisible, isBalanceVisibilityHydrated } = useBalanceVisibility(customerId, isUserLoaded);
   const currentSection = pageSections.some((item) => item.key === firstParam(rawSection))
     ? firstParam(rawSection) as DetailsSection
     : "activity";
@@ -152,7 +167,6 @@ export function CardDetailsScreen() {
   const [filters, setFilters] = useState<CardTransactionFilters>(initialFilters);
   const [searchInput, setSearchInput] = useState("");
   const [pageNumber, setPageNumber] = useState(1);
-  const [balanceVisible, setBalanceVisible] = useState(true);
   const [controlBusy, setControlBusy] = useState(false);
   const [lastOperation, setLastOperation] = useState<CardControlOperation | null>(null);
   const [masterConfirmation, setMasterConfirmation] = useState<CardMasterState | null>(null);
@@ -163,6 +177,26 @@ export function CardDetailsScreen() {
   const [lostReason, setLostReason] = useState<"lost" | "stolen">("lost");
   const requestId = useRef(0);
   const transactionRequestId = useRef(0);
+  const cardRef = useRef<CardRecord | null>(null);
+  const transactionsRef = useRef<CardTransactionPage | null>(null);
+
+  const remoteOperation = useCallback((kind: CardOperationKind, cardRecord: CardRecord, requestedChange: string, beforeState: string): CardControlOperation => {
+    const now = new Date().toISOString();
+    return {
+      id: `${cardRecord.id}-remote-operation-${Date.now()}`,
+      idempotencyKey: nextKey("remote"),
+      customerId: customerId ?? "remote",
+      cardId: cardRecord.id,
+      kind,
+      requestedChange,
+      beforeState,
+      status: "confirmed",
+      providerReference: cardRecord.providerReference,
+      createdAt: now,
+      updatedAt: now,
+      sourceEnvironment: "Bank API",
+    };
+  }, [customerId]);
 
   const loadCard = useCallback(async (quiet = false) => {
     if (!cardId) {
@@ -171,9 +205,25 @@ export function CardDetailsScreen() {
       return;
     }
     const currentRequest = ++requestId.current;
-    if (!quiet) setCardState("loading");
+    if (!quiet || !cardRef.current) setCardState("loading");
     setCardError(null);
     try {
+      if (isRemoteDataEnabled) {
+        if (!isUserLoaded || !isFinancialAuthReady(isAuthLoaded, isSignedIn)) return;
+        const remoteCard = await getRemoteCard(cardId, { getToken });
+        const nextCard = apiCardToCardRecord(remoteCard);
+        let nextFunding: Awaited<ReturnType<typeof getCardFundingSummary>> = { type: "unavailable" };
+        if (nextCard.productKind === "debit" && nextCard.linkedAccountId) {
+          const remoteAccount = await getRemoteAccount(nextCard.linkedAccountId, { getToken });
+          nextFunding = { type: "debit", account: apiAccountToBankAccount(remoteAccount) };
+        }
+        if (currentRequest !== requestId.current) return;
+        cardRef.current = nextCard;
+        setCard(nextCard);
+        setFundingSummary(nextFunding);
+        setCardState("ready");
+        return;
+      }
       const [nextCard, nextFunding] = await Promise.all([
         getCard(cardId, { customerId }),
         getCardFundingSummary(cardId, { customerId }),
@@ -185,46 +235,51 @@ export function CardDetailsScreen() {
         setCard(null);
         return;
       }
+      cardRef.current = nextCard;
       setCard(nextCard);
       setFundingSummary(nextFunding);
-      if (nextFunding.type === "debit") {
-        const preference = await getAccountPreference(nextFunding.account.id, { customerId });
-        if (currentRequest === requestId.current) setBalanceVisible(preference.balanceVisible !== false);
-      }
       setCardState("ready");
     } catch {
       if (currentRequest === requestId.current) {
-        setCardState("error");
+        if (!quiet || !cardRef.current) setCardState("error");
         setCardError("We couldn’t load this card. Please try again.");
       }
     }
-  }, [cardId, customerId]);
+  }, [cardId, customerId, getToken, isAuthLoaded, isSignedIn, isUserLoaded]);
 
   const loadTransactions = useCallback(async () => {
     if (!cardId || cardState !== "ready") return;
     const currentRequest = ++transactionRequestId.current;
-    setTransactionState("loading");
+    if (!transactionsRef.current) setTransactionState("loading");
     setTransactionError(null);
     try {
-      const nextPage = await getCardTransactions(cardId, {
-        customerId,
-        filters: { ...filters, search: searchInput.trim() || undefined },
-        page: pageNumber,
-      });
+      const nextPage = isRemoteDataEnabled
+        ? apiCardTransactionsToPage(
+            (await getRemoteCardTransactions(cardId, { getToken })).items,
+            normalizeCardTransactionFilters({ ...filters, search: searchInput.trim() || undefined }),
+            pageNumber,
+          )
+        : await getCardTransactions(cardId, {
+            customerId,
+            filters: { ...filters, search: searchInput.trim() || undefined },
+            page: pageNumber,
+          });
       if (currentRequest !== transactionRequestId.current) return;
+      transactionsRef.current = nextPage;
       setTransactions(nextPage);
       setTransactionState("ready");
     } catch (error) {
       if (currentRequest !== transactionRequestId.current) return;
-      setTransactionState("error");
+      if (!transactionsRef.current) setTransactionState("error");
       setTransactionError(error instanceof Error ? error.message : "Transactions unavailable");
     }
-  }, [cardId, cardState, customerId, filters, pageNumber, searchInput]);
+  }, [cardId, cardState, customerId, filters, getToken, pageNumber, searchInput]);
 
   useEffect(() => {
     setFilters(initialFilters);
     setSearchInput("");
     setPageNumber(1);
+    transactionsRef.current = null;
     setTransactions(null);
     void loadCard();
   }, [cardId, loadCard]);
@@ -232,15 +287,6 @@ export function CardDetailsScreen() {
   useEffect(() => {
     if (currentSection === "activity") void loadTransactions();
   }, [currentSection, loadTransactions]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (cardState === "ready") {
-        void loadCard(true);
-        if (currentSection === "activity") void loadTransactions();
-      }
-    }, [cardState, currentSection, loadCard, loadTransactions]),
-  );
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
@@ -265,6 +311,13 @@ export function CardDetailsScreen() {
     if (!card || masterConfirmation === null || controlBusy) return;
     setControlBusy(true);
     try {
+      if (isRemoteDataEnabled) {
+        await updateRemoteCardStatus(card.id, masterConfirmation === "off" ? "temporarily_blocked" : "active", { getToken });
+        const operation = remoteOperation("master-state", card, JSON.stringify({ state: masterConfirmation }), card.lifecycleStatus);
+        setMasterConfirmation(null);
+        await refreshAfterOperation(operation);
+        return;
+      }
       const operation = await updateCardMasterState(card.id, masterConfirmation, {
         customerId,
         expectedRevision: card.sourceRevision,
@@ -283,6 +336,18 @@ export function CardDetailsScreen() {
     if (!card || controlBusy || !control.supported) return;
     setControlBusy(true);
     try {
+      if (isRemoteDataEnabled) {
+        const field = control.channel === "atm"
+          ? "atmEnabled"
+          : control.channel === "online"
+            ? "onlineEnabled"
+            : control.channel === "contactless"
+              ? "contactlessEnabled"
+              : control.group === "international" ? "internationalEnabled" : "domesticEnabled";
+        await updateRemoteCardControls(card.id, { [field]: nextValue }, { getToken });
+        await refreshAfterOperation(remoteOperation("channel-state", card, JSON.stringify({ group: control.group, channel: control.channel, state: nextValue ? "enabled" : "disabled" }), control.state));
+        return;
+      }
       const operation = await updateCardChannelState(card.id, control.group, control.channel, nextValue ? "enabled" : "disabled", {
         customerId,
         expectedRevision: card.sourceRevision,
@@ -301,6 +366,13 @@ export function CardDetailsScreen() {
     setControlBusy(true);
     try {
       const amountMinorUnits = parseLimitInput(limitDraft.value);
+      if (isRemoteDataEnabled) {
+        const field = limitDraft.id.endsWith("-pos") ? "dailyPosLimit" : limitDraft.id.endsWith("-online") ? "dailyOnlineLimit" : "dailyAtmLimit";
+        await updateRemoteCardControls(card.id, { [field]: (amountMinorUnits / 100).toFixed(2) }, { getToken });
+        setLimitDraft(null);
+        await refreshAfterOperation(remoteOperation("limit", card, JSON.stringify({ limitId: limitDraft.id, amountMinorUnits }), String(card.limits.find((item) => item.id === limitDraft.id)?.amountMinorUnits ?? "unknown")));
+        return;
+      }
       const operation = await updateCardLimit(card.id, limitDraft.id, amountMinorUnits, {
         customerId,
         expectedRevision: card.sourceRevision,
@@ -332,6 +404,12 @@ export function CardDetailsScreen() {
     if (!card || controlBusy) return;
     setControlBusy(true);
     try {
+      if (isRemoteDataEnabled) {
+        await blockRemoteCard(card.id, { getToken });
+        setLostModalOpen(false);
+        await refreshAfterOperation(remoteOperation("hotlist", card, JSON.stringify({ reason: lostReason }), card.lifecycleStatus));
+        return;
+      }
       const operation = await reportCardLostOrStolen(card.id, lostReason, {
         customerId,
         expectedRevision: card.sourceRevision,
@@ -350,6 +428,12 @@ export function CardDetailsScreen() {
     if (!card || controlBusy) return;
     setControlBusy(true);
     try {
+      if (isRemoteDataEnabled) {
+        const updated = await updateRemoteCardNickname(card.id, nicknameDraft.trim(), { getToken });
+        setCard(apiCardToCardRecord(updated));
+        setNicknameModalOpen(false);
+        return;
+      }
       const nextCard = await updateCardNickname(card.id, nicknameDraft, { customerId });
       setCard(nextCard);
       setNicknameModalOpen(false);
@@ -369,11 +453,18 @@ export function CardDetailsScreen() {
   const isTablet = width >= 768;
   const tabBarHeight = Platform.select({ ios: 72 + insets.bottom, android: 66 + Math.max(insets.bottom, 10), default: 76 });
 
-  if (cardState === "loading") return <LoadingScreen />;
+  const toggleBalanceVisibility = () => {
+    const nextVisible = !balanceVisible;
+    void updateBalanceVisibility(undefined, nextVisible, { customerId }).catch((caught) => {
+      if (process.env.NODE_ENV !== "production") console.warn("[BALANCE_VISIBILITY] sync failed", caught);
+    });
+  };
+
+  if (!isUserLoaded || !isBalanceVisibilityHydrated || cardState === "loading") return <LoadingScreen />;
   if (!card || cardState === "error") {
     return (
       <View style={styles.screen}>
-        <View style={[styles.content, { paddingHorizontal: horizontalPadding, paddingTop: 12 }]}>
+        <View style={[styles.content, { paddingHorizontal: horizontalPadding, paddingTop: insets.top + 12 }]}>
           <BackButton onPress={goBack} />
           <StateCard title="Card unavailable" description={cardError ?? "This card could not be found."} actionLabel="Back to Cards" onAction={() => router.replace("/(app)/cards")} />
         </View>
@@ -386,7 +477,7 @@ export function CardDetailsScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingBottom: 30 + tabBarHeight }]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12, paddingBottom: 30 + tabBarHeight }]}>
         <View style={[styles.content, { maxWidth: isTablet ? 900 : undefined, paddingHorizontal: horizontalPadding }]}>
           <View style={styles.headerRow}>
             <BackButton onPress={goBack} />
@@ -406,7 +497,7 @@ export function CardDetailsScreen() {
 
           <PaymentCardPreview card={card} />
 
-          <FinancialSummary card={card} summary={fundingSummary} balanceVisible={balanceVisible} onToggleBalance={() => setBalanceVisible((visible) => !visible)} />
+          <FinancialSummary card={card} summary={fundingSummary} balanceVisible={balanceVisible} onToggleBalance={toggleBalanceVisibility} />
 
           <View style={styles.primaryActions}>
             {card.capabilities.canTemporarilyDisable || isTemporarilyOff ? (
@@ -428,7 +519,7 @@ export function CardDetailsScreen() {
                 <Text style={styles.operationTitle}>{operationStatusLabel(lastOperation.status)}</Text>
                 <Text style={styles.operationDescription}>The last requested change is not shown as applied until its status is confirmed.</Text>
               </View>
-              {lastOperation.status === "pending" || lastOperation.status === "unknown" ? <Pressable accessibilityRole="button" accessibilityLabel="Check card operation status" onPress={() => void checkOperation} style={styles.checkButton}><Text style={styles.checkButtonText}>Check</Text></Pressable> : null}
+              {lastOperation.status === "pending" || lastOperation.status === "unknown" ? <Pressable accessibilityRole="button" accessibilityLabel="Check card operation status" onPress={() => void checkOperation()} style={styles.checkButton}><Text style={styles.checkButtonText}>Check</Text></Pressable> : null}
             </View>
           ) : null}
 
@@ -448,18 +539,20 @@ export function CardDetailsScreen() {
               filters={filters}
               search={searchInput}
               pageNumber={pageNumber}
+              balanceVisible={balanceVisible}
               onSearch={setSearchInput}
               onPage={setPageNumber}
               onSetFilter={(key, value) => { setFilters((current) => ({ ...current, [key]: value })); setPageNumber(1); }}
               onTransaction={(transaction) => router.push({ pathname: "/(app)/cards/transaction/[transactionId]", params: { cardId: card.id, transactionId: transaction.id } })}
               onAskCoach={askCoach}
+              onViewAll={() => router.push({ pathname: "/(app)/activity", params: { cardId: card.id, period: filters.period ?? "all" } })}
             />
           ) : currentSection === "controls" ? (
             <ControlsSection card={card} busy={controlBusy} onChannelChange={(control, value) => void applyChannelChange(control, value)} onLimitEdit={(id, value) => setLimitDraft({ id, value: formatLimitInput(value) })} />
           ) : currentSection === "details" ? (
             <CardDetailsMetadataSection card={card} onEditNickname={() => { setNicknameDraft(card.nickname ?? ""); setNicknameModalOpen(true); }} />
           ) : (
-            <BillingSection card={card} />
+            <BillingSection card={card} balanceVisible={balanceVisible} />
           )}
         </View>
       </ScrollView>
@@ -510,26 +603,26 @@ function FinancialSummary({ card, summary, balanceVisible, onToggleBalance }: { 
   if (summary.type === "debit") {
     const account = summary.account;
     const available = account.availableBalanceMinorUnits ?? account.balanceMinorUnits;
-    return <View style={styles.financialCard}><View style={styles.financialHeader}><View><Text style={styles.eyebrow}>Linked payment account</Text><Text style={styles.financialTitle}>{account.nickname ?? account.name} •••• {account.lastFour}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={balanceVisible ? "Hide card linked account balance" : "Show card linked account balance"} onPress={onToggleBalance} style={styles.eyeButton}><Ionicons name={balanceVisible ? "eye-outline" : "eye-off-outline"} size={20} color={colors.secondary} /></Pressable></View><Text style={styles.financialLabel}>Available account balance</Text><Text style={styles.financialValue}>{balanceVisible ? formatIndianMinorUnits(available) : "₹ ••••••••"}</Text><Text style={styles.sourceText}>{account.sourceEnvironment} · Updated {formatDate(account.lastSuccessfulUpdate)}</Text><Text style={styles.scopeText}>This is the linked account balance, not a separate debit-card balance.</Text></View>;
+    return <View style={styles.financialCard}><View style={styles.financialHeader}><View><Text style={styles.eyebrow}>Linked payment account</Text><Text style={styles.financialTitle}>{account.nickname ?? account.name} •••• {account.lastFour}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={balanceVisible ? "Hide card linked account balance" : "Show card linked account balance"} onPress={onToggleBalance} style={styles.eyeButton}><Ionicons name={balanceVisible ? "eye-outline" : "eye-off-outline"} size={20} color={colors.secondary} /></Pressable></View><Text style={styles.financialLabel}>Available account balance</Text><Text style={styles.financialValue}>{balanceVisible ? formatIndianMinorUnits(available) : "Balance hidden"}</Text><Text style={styles.sourceText}>{account.sourceEnvironment} · Updated {formatDate(account.lastSuccessfulUpdate)}</Text><Text style={styles.scopeText}>This is the linked account balance, not a separate debit-card balance.</Text></View>;
   }
   const facility = summary.facility;
-  return <View style={styles.financialCard}><View style={styles.financialHeader}><View><Text style={styles.eyebrow}>Shared credit facility</Text><Text style={styles.financialTitle}>{facility.facilityLabel}</Text></View><View style={styles.sharedBadge}><Text style={styles.sharedBadgeText}>Shared</Text></View></View><View style={styles.creditGrid}><Metric label="Current outstanding" value={facility.currentOutstandingMinorUnits} /><Metric label="Available credit" value={facility.availableCreditMinorUnits} /><Metric label="Approved limit" value={facility.approvedCreditLimitMinorUnits} /></View><Text style={styles.scopeText}>Billing and outstanding amounts refer to the entire facility, not only this physical card.</Text></View>;
+  return <View style={styles.financialCard}><View style={styles.financialHeader}><View><Text style={styles.eyebrow}>Shared credit facility</Text><Text style={styles.financialTitle}>{facility.facilityLabel}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={balanceVisible ? "Hide credit facility balances" : "Show credit facility balances"} onPress={onToggleBalance} style={styles.eyeButton}><Ionicons name={balanceVisible ? "eye-outline" : "eye-off-outline"} size={20} color={colors.secondary} /></Pressable></View><View style={styles.creditGrid}><Metric label="Current outstanding" value={facility.currentOutstandingMinorUnits} visible={balanceVisible} /><Metric label="Available credit" value={facility.availableCreditMinorUnits} visible={balanceVisible} /><Metric label="Approved limit" value={facility.approvedCreditLimitMinorUnits} visible={balanceVisible} /></View><Text style={styles.scopeText}>Billing and outstanding amounts refer to the entire facility, not only this physical card.</Text></View>;
 }
 
-function Metric({ label, value }: { label: string; value?: number }) { return <View style={styles.metric}><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value === undefined ? "Unavailable" : formatIndianMinorUnits(value)}</Text></View>; }
+function Metric({ label, value, visible = true }: { label: string; value?: number; visible?: boolean }) { return <View style={styles.metric}><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{!visible ? "Amount hidden" : value === undefined ? "Unavailable" : formatIndianMinorUnits(value)}</Text></View>; }
 
 function PrimaryAction({ icon, label, onPress, disabled = false, destructive = false }: { icon: React.ComponentProps<typeof Ionicons>["name"]; label: string; onPress: () => void; disabled?: boolean; destructive?: boolean }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.primaryAction, destructive && styles.primaryActionDestructive, disabled && styles.disabledAction, pressed && styles.pressed]}><Ionicons name={icon} size={21} color={destructive ? colors.danger : colors.greenDark} /><Text style={[styles.primaryActionText, destructive && styles.destructiveText]}>{label}</Text></Pressable>; }
 
-function ActivitySection({ transactions, loadState, error, filters, search, pageNumber, onSearch, onPage, onSetFilter, onTransaction, onAskCoach }: { transactions: CardTransactionPage | null; loadState: LoadState; error: string | null; filters: CardTransactionFilters; search: string; pageNumber: number; onSearch: (value: string) => void; onPage: (page: number) => void; onSetFilter: <Key extends keyof CardTransactionFilters>(key: Key, value: CardTransactionFilters[Key]) => void; onTransaction: (transaction: CardTransaction) => void; onAskCoach: () => void }) {
+function ActivitySection({ transactions, loadState, error, filters, search, pageNumber, balanceVisible, onSearch, onPage, onSetFilter, onTransaction, onAskCoach, onViewAll }: { transactions: CardTransactionPage | null; loadState: LoadState; error: string | null; filters: CardTransactionFilters; search: string; pageNumber: number; balanceVisible: boolean; onSearch: (value: string) => void; onPage: (page: number) => void; onSetFilter: <Key extends keyof CardTransactionFilters>(key: Key, value: CardTransactionFilters[Key]) => void; onTransaction: (transaction: CardTransaction) => void; onAskCoach: () => void; onViewAll: () => void }) {
   const hasFilters = Boolean(search || (filters.period && filters.period !== "all") || (filters.status && filters.status !== "all") || (filters.transactionType && filters.transactionType !== "all"));
-  return <View><View style={styles.sectionHeading}><View style={styles.sectionHeadingText}><Text accessibilityRole="header" style={styles.sectionTitle}>Card activity</Text><Text style={styles.sectionDescription}>Transactions attributed to this card only. Account transfers are not included automatically.</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Ask Coach about this card’s spending" onPress={onAskCoach} style={styles.coachButton}><Ionicons name="sparkles-outline" size={18} color={colors.greenDark} /><Text style={styles.coachButtonText}>Ask Coach</Text></Pressable></View>{transactions ? <SpendingSummary summary={transactions.summary} /> : null}<View style={styles.filtersPanel}><View style={styles.searchBox}><Ionicons name="search-outline" size={18} color={colors.secondary} /><TextInput accessibilityLabel="Search card transactions" value={search} onChangeText={onSearch} placeholder="Search merchant or reference" placeholderTextColor={colors.muted} style={styles.searchInput} /></View><View style={styles.chipRowWrap}><FilterChip label="All time" selected={!filters.period || filters.period === "all"} onPress={() => onSetFilter("period", "all")} /><FilterChip label="This month" selected={filters.period === "this-month"} onPress={() => onSetFilter("period", "this-month")} /><FilterChip label="Pending" selected={filters.status === "pending"} onPress={() => onSetFilter("status", filters.status === "pending" ? "all" : "pending")} /><FilterChip label="Purchases" selected={filters.transactionType === "purchase"} onPress={() => onSetFilter("transactionType", filters.transactionType === "purchase" ? "all" : "purchase")} /></View></View>{loadState === "loading" && !transactions ? <ActivityIndicator color={colors.green} style={styles.loader} /> : loadState === "error" ? <StateCard title="Activity unavailable" description={error ?? "Please try again."} /> : !transactions || transactions.totalItems === 0 ? <StateCard title={hasFilters ? "No matching transactions" : "No card transactions yet"} description={hasFilters ? "Try changing the search or filters." : "Card activity will appear when records are available from the provider."} /> : <View style={styles.transactionCard}>{transactions.items.map((item) => <CardTransactionRow key={item.id} transaction={item} onPress={() => onTransaction(item)} />)}<View style={styles.paginationRow}><Text style={styles.paginationText}>{transactions.totalItems} records · page {transactions.page} of {transactions.totalPages}</Text><View style={styles.paginationButtons}><Pressable accessibilityRole="button" accessibilityLabel="Previous card transaction page" disabled={pageNumber <= 1} onPress={() => onPage(Math.max(1, pageNumber - 1))} style={({ pressed }) => [styles.paginationButton, pageNumber <= 1 && styles.disabledAction, pressed && styles.pressed]}><Ionicons name="chevron-back" size={18} color={pageNumber <= 1 ? colors.muted : colors.greenDark} /></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Next card transaction page" disabled={transactions.page >= transactions.totalPages} onPress={() => onPage(Math.min(transactions.totalPages, pageNumber + 1))} style={({ pressed }) => [styles.paginationButton, transactions.page >= transactions.totalPages && styles.disabledAction, pressed && styles.pressed]}><Ionicons name="chevron-forward" size={18} color={transactions.page >= transactions.totalPages ? colors.muted : colors.greenDark} /></Pressable></View></View></View>}</View>;
+  return <View><View style={styles.sectionHeading}><View style={styles.sectionHeadingText}><Text accessibilityRole="header" style={styles.sectionTitle}>Card activity</Text><Text style={styles.sectionDescription}>Transactions attributed to this card only. Account transfers are not included automatically.</Text></View><View style={styles.sectionActions}><Pressable accessibilityRole="button" accessibilityLabel="View all transactions" onPress={onViewAll} style={styles.viewAllButton}><Text style={styles.viewAllText}>View all</Text><Ionicons name="chevron-forward" size={15} color={colors.greenDark} /></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Ask Coach about this card’s spending" onPress={onAskCoach} style={styles.coachButton}><Ionicons name="sparkles-outline" size={18} color={colors.greenDark} /><Text style={styles.coachButtonText}>Ask Coach</Text></Pressable></View></View>{transactions ? <SpendingSummary summary={transactions.summary} balanceVisible={balanceVisible} /> : null}<View style={styles.filtersPanel}><View style={styles.searchBox}><Ionicons name="search-outline" size={18} color={colors.secondary} /><TextInput accessibilityLabel="Search card transactions" value={search} onChangeText={onSearch} placeholder="Search merchant or reference" placeholderTextColor={colors.muted} style={styles.searchInput} /></View><View style={styles.chipRowWrap}><FilterChip label="All time" selected={!filters.period || filters.period === "all"} onPress={() => onSetFilter("period", "all")} /><FilterChip label="This month" selected={filters.period === "this-month"} onPress={() => onSetFilter("period", "this-month")} /><FilterChip label="Pending" selected={filters.status === "pending"} onPress={() => onSetFilter("status", filters.status === "pending" ? "all" : "pending")} /><FilterChip label="Purchases" selected={filters.transactionType === "purchase"} onPress={() => onSetFilter("transactionType", filters.transactionType === "purchase" ? "all" : "purchase")} /></View></View>{loadState === "loading" && !transactions ? <ActivityIndicator color={colors.green} style={styles.loader} /> : loadState === "error" && !transactions ? <StateCard title="Activity unavailable" description={error ?? "Please try again."} /> : !transactions || transactions.totalItems === 0 ? <StateCard title={hasFilters ? "No matching transactions" : "No card transactions yet"} description={hasFilters ? "Try changing the search or filters." : "Card activity will appear when records are available from the provider."} /> : <View style={styles.transactionCard}>{error ? <Text style={styles.staleText} accessibilityRole="alert">{error} Showing the last successful data.</Text> : null}{transactions.items.map((item) => <CardTransactionRow key={item.id} transaction={item} balanceVisible={balanceVisible} onPress={() => onTransaction(item)} />)}<View style={styles.paginationRow}><Text style={styles.paginationText}>{transactions.totalItems} records · page {transactions.page} of {transactions.totalPages}</Text><View style={styles.paginationButtons}><Pressable accessibilityRole="button" accessibilityLabel="Previous card transaction page" disabled={pageNumber <= 1} onPress={() => onPage(Math.max(1, pageNumber - 1))} style={({ pressed }) => [styles.paginationButton, pageNumber <= 1 && styles.disabledAction, pressed && styles.pressed]}><Ionicons name="chevron-back" size={18} color={pageNumber <= 1 ? colors.muted : colors.greenDark} /></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Next card transaction page" disabled={transactions.page >= transactions.totalPages} onPress={() => onPage(Math.min(transactions.totalPages, pageNumber + 1))} style={({ pressed }) => [styles.paginationButton, transactions.page >= transactions.totalPages && styles.disabledAction, pressed && styles.pressed]}><Ionicons name="chevron-forward" size={18} color={transactions.page >= transactions.totalPages ? colors.muted : colors.greenDark} /></Pressable></View></View></View>}</View>;
 }
 
-function SpendingSummary({ summary }: { summary: CardTransactionPage["summary"] }) { return <View style={styles.spendingSummary}><Text style={styles.eyebrow}>Card spending</Text><Text style={styles.summaryScope}>{summary.scopeLabel}</Text><View style={styles.creditGrid}><Metric label="Purchases" value={summary.postedPurchasesMinorUnits} /><Metric label="Cash withdrawals" value={summary.postedCashWithdrawalsMinorUnits} /><Metric label="Fees" value={summary.postedFeesMinorUnits} /></View><Text style={styles.coverageText}>{summary.coverageLabel}</Text></View>; }
+function SpendingSummary({ summary, balanceVisible }: { summary: CardTransactionPage["summary"]; balanceVisible: boolean }) { return <View style={styles.spendingSummary}><Text style={styles.eyebrow}>Card spending</Text><Text style={styles.summaryScope}>{summary.scopeLabel}</Text><View style={styles.creditGrid}><Metric label="Purchases" value={summary.postedPurchasesMinorUnits} visible={balanceVisible} /><Metric label="Cash withdrawals" value={summary.postedCashWithdrawalsMinorUnits} visible={balanceVisible} /><Metric label="Fees" value={summary.postedFeesMinorUnits} visible={balanceVisible} /></View><Text style={styles.coverageText}>{summary.coverageLabel}</Text></View>; }
 
 function FilterChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={({ pressed }) => [styles.filterChip, selected && styles.filterChipSelected, pressed && styles.pressed]}><Text style={[styles.filterChipText, selected && styles.filterChipTextSelected]}>{label}</Text></Pressable>; }
 
-function CardTransactionRow({ transaction, onPress }: { transaction: CardTransaction; onPress: () => void }) { const isCredit = transaction.direction === "credit"; return <Pressable accessibilityRole="button" accessibilityLabel={`Open ${transaction.merchant ?? transaction.description}, ${formatIndianMinorUnits(transaction.amountMinorUnits)}`} onPress={onPress} style={({ pressed }) => [styles.transactionRow, pressed && styles.pressed]}><View style={styles.transactionIcon}><Ionicons name={transaction.transactionType === "cash-withdrawal" ? "cash-outline" : transaction.transactionType === "refund" ? "return-down-back-outline" : transaction.transactionType === "fee" ? "receipt-outline" : "cart-outline"} size={21} color={isCredit ? colors.greenDark : colors.orange} /></View><View style={styles.transactionText}><Text style={styles.transactionTitle} numberOfLines={1}>{transaction.merchant ?? transaction.description}</Text><Text style={styles.transactionMeta} numberOfLines={1}>{transactionTypeLabel(transaction.transactionType)} · {formatDate(transaction.transactionDate)}</Text><View style={styles.statusLine}><Text style={styles.transactionStatus}>{statusLabel(transaction.status)}</Text>{transaction.category ? <Text style={styles.transactionCategory}>{transaction.category}</Text> : null}</View></View><View style={styles.transactionAmount}><Text style={[styles.amountText, isCredit && styles.amountCredit]}>{isCredit ? "+" : "−"}{formatIndianMinorUnits(transaction.amountMinorUnits)}</Text><Ionicons name="chevron-forward" size={18} color="#B7C0C8" /></View></Pressable>; }
+function CardTransactionRow({ transaction, balanceVisible, onPress }: { transaction: CardTransaction; balanceVisible: boolean; onPress: () => void }) { const isCredit = transaction.direction === "credit"; const amount = balanceVisible ? formatTransactionAmount(transaction.amountMinorUnits, isCredit ? "credit" : "debit") : "Amount hidden"; return <Pressable accessibilityRole="button" accessibilityLabel={`Open ${transaction.merchant ?? transaction.description}, ${amount}`} onPress={onPress} style={({ pressed }) => [styles.transactionRow, pressed && styles.pressed]}><View style={styles.transactionIcon}><Ionicons name={transaction.transactionType === "cash-withdrawal" ? "cash-outline" : transaction.transactionType === "refund" ? "return-down-back-outline" : transaction.transactionType === "fee" ? "receipt-outline" : "cart-outline"} size={21} color={isCredit ? colors.greenDark : colors.orange} /></View><View style={styles.transactionText}><Text style={styles.transactionTitle} numberOfLines={1}>{transaction.merchant ?? transaction.description}</Text><Text style={styles.transactionMeta} numberOfLines={1}>{transactionTypeLabel(transaction.transactionType)} · {formatDate(transaction.transactionDate)}</Text><View style={styles.statusLine}><Text style={styles.transactionStatus}>{statusLabel(transaction.status)}</Text>{transaction.category ? <Text style={styles.transactionCategory}>{transaction.category}</Text> : null}</View></View><View style={styles.transactionAmount}><Text style={[styles.amountText, isCredit ? styles.amountCredit : styles.amountDebit]}>{amount}</Text><Ionicons name="chevron-forward" size={18} color="#B7C0C8" /></View></Pressable>; }
 
 function ControlsSection({ card, busy, onChannelChange, onLimitEdit }: { card: CardRecord; busy: boolean; onChannelChange: (control: CardControl, value: boolean) => void; onLimitEdit: (id: string, value: number) => void }) {
   const groups: CardChannelGroup[] = ["domestic", "international"];
@@ -542,7 +635,7 @@ function CardDetailsMetadataSection({ card, onEditNickname }: { card: CardRecord
 
 function Capability({ label, enabled }: { label: string; enabled: boolean }) { return <View style={styles.capabilityRow}><Ionicons name={enabled ? "checkmark-circle" : "remove-circle-outline"} size={18} color={enabled ? colors.green : colors.muted} /><Text style={[styles.capabilityText, !enabled && styles.unavailableText]}>{enabled ? label : `${label} unavailable`}</Text></View>; }
 
-function BillingSection({ card }: { card: CardRecord }) { const facility = card.creditFacility; if (!facility) return <StateCard title="Billing unavailable" description="This product does not supply credit billing information." />; return <View><View style={styles.sectionHeading}><View style={styles.sectionHeadingText}><Text accessibilityRole="header" style={styles.sectionTitle}>Billing & statements</Text><Text style={styles.sectionDescription}>Source-provided amounts for the shared credit facility.</Text></View></View><View style={styles.detailsCard}><BillingRow label="Statement period" value={facility.statementPeriod ?? "Unavailable"} /><BillingRow label="Statement total due" value={facility.statementTotalDueMinorUnits === undefined ? "Unavailable" : formatIndianMinorUnits(facility.statementTotalDueMinorUnits)} /><BillingRow label="Minimum amount due" value={facility.minimumAmountDueMinorUnits === undefined ? "Unavailable" : formatIndianMinorUnits(facility.minimumAmountDueMinorUnits)} /><BillingRow label="Payment due date" value={facility.paymentDueDate ? formatDate(facility.paymentDueDate) : "Unavailable"} /><BillingRow label="Payment status" value={facility.paymentStatus ?? "Unavailable"} /><Text style={styles.billingNote}>A minimum payment is not the same as fully settling a statement. Bill payment is unavailable until an authorised payment integration is connected.</Text><Pressable accessibilityRole="button" accessibilityLabel="Pay credit card bill unavailable" disabled style={[styles.secondaryDisabledButton, styles.disabledAction]}><Text style={styles.secondaryDisabledText}>Pay bill unavailable in this prototype</Text></Pressable><Text style={styles.demoDocument}>Demo card activity — not an official bank statement.</Text></View></View>; }
+function BillingSection({ card, balanceVisible }: { card: CardRecord; balanceVisible: boolean }) { const facility = card.creditFacility; if (!facility) return <StateCard title="Billing unavailable" description="This product does not supply credit billing information." />; return <View><View style={styles.sectionHeading}><View style={styles.sectionHeadingText}><Text accessibilityRole="header" style={styles.sectionTitle}>Billing & statements</Text><Text style={styles.sectionDescription}>Source-provided amounts for the shared credit facility.</Text></View></View><View style={styles.detailsCard}><BillingRow label="Statement period" value={facility.statementPeriod ?? "Unavailable"} /><BillingRow label="Statement total due" value={!balanceVisible ? "Amount hidden" : facility.statementTotalDueMinorUnits === undefined ? "Unavailable" : formatIndianMinorUnits(facility.statementTotalDueMinorUnits)} /><BillingRow label="Minimum amount due" value={!balanceVisible ? "Amount hidden" : facility.minimumAmountDueMinorUnits === undefined ? "Unavailable" : formatIndianMinorUnits(facility.minimumAmountDueMinorUnits)} /><BillingRow label="Payment due date" value={facility.paymentDueDate ? formatDate(facility.paymentDueDate) : "Unavailable"} /><BillingRow label="Payment status" value={facility.paymentStatus ?? "Unavailable"} /><Text style={styles.billingNote}>A minimum payment is not the same as fully settling a statement. Bill payment is unavailable until an authorised payment integration is connected.</Text><Pressable accessibilityRole="button" accessibilityLabel="Pay credit card bill unavailable" disabled style={[styles.secondaryDisabledButton, styles.disabledAction]}><Text style={styles.secondaryDisabledText}>Pay bill unavailable in this prototype</Text></Pressable><Text style={styles.demoDocument}>Demo card activity — not an official bank statement.</Text></View></View>; }
 
 function BillingRow({ label, value }: { label: string; value: string }) { return <View style={styles.billingRow}><Text style={styles.billingLabel}>{label}</Text><Text style={styles.billingValue}>{value}</Text></View>; }
 
@@ -607,6 +700,9 @@ const styles = StyleSheet.create({
   sectionTabTextSelected: { color: colors.greenDark },
   sectionHeading: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 13 },
   sectionHeadingText: { flex: 1, minWidth: 0 },
+  sectionActions: { alignItems: "flex-end", marginLeft: 8 },
+  viewAllButton: { minHeight: 34, flexDirection: "row", alignItems: "center", columnGap: 2, paddingHorizontal: 4 },
+  viewAllText: { color: colors.greenDark, fontSize: 12, fontWeight: "800" },
   sectionTitle: { color: colors.text, fontSize: 21, lineHeight: 27, fontWeight: "800" },
   sectionDescription: { marginTop: 5, color: colors.secondary, fontSize: 13, lineHeight: 19 },
   coachButton: { minHeight: 42, flexDirection: "row", alignItems: "center", paddingHorizontal: 10, borderRadius: 12, backgroundColor: colors.greenSoft },
@@ -624,6 +720,7 @@ const styles = StyleSheet.create({
   filterChipTextSelected: { color: colors.greenDark },
   loader: { marginTop: 28 },
   transactionCard: { marginTop: 14, overflow: "hidden", borderRadius: 18, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  staleText: { padding: 12, color: colors.orange, fontSize: 12, lineHeight: 17 },
   transactionRow: { minHeight: 82, flexDirection: "row", alignItems: "center", paddingHorizontal: 13, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   transactionIcon: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 20, backgroundColor: colors.orangeSoft },
   transactionText: { flex: 1, minWidth: 0, marginLeft: 11 },
@@ -635,6 +732,7 @@ const styles = StyleSheet.create({
   transactionAmount: { flexDirection: "row", alignItems: "center", marginLeft: 7 },
   amountText: { color: colors.text, fontSize: 13, fontWeight: "800" },
   amountCredit: { color: colors.greenDark },
+  amountDebit: { color: colors.danger },
   paginationRow: { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 13 },
   paginationText: { flex: 1, color: colors.secondary, fontSize: 11 },
   paginationButtons: { flexDirection: "row", columnGap: 5, marginLeft: 8 },

@@ -1,14 +1,17 @@
 import { useRouter } from "expo-router";
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { SectionHeader, Surface } from "@/components/design-system";
+import { appColors } from "@/components/theme/tokens";
 import { BankingActivity } from "../../types/banking";
 import ActivityRow from "./activity-row";
 
 type ActivityCardProps = {
   activities: BankingActivity[];
+  balanceVisible?: boolean;
 };
 
-export default function ActivityCard({ activities }: ActivityCardProps) {
+export default function ActivityCard({ activities, balanceVisible = true }: ActivityCardProps) {
   const router = useRouter();
 
   const handleViewAllPress = () => {
@@ -23,22 +26,13 @@ export default function ActivityCard({ activities }: ActivityCardProps) {
   };
 
   return (
-    <View style={styles.card}>
-      {/* Header Row */}
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>Activity</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="View all account activity"
-          onPress={handleViewAllPress}
-          style={({ pressed }) => [
-            styles.viewAllButton,
-            pressed && styles.viewAllPressed,
-          ]}
-        >
-          <Text style={styles.viewAllText}>View All</Text>
-        </Pressable>
-      </View>
+    <Surface style={styles.card}>
+      <SectionHeader
+        title="Activity"
+        actionLabel="View all"
+        accessibilityLabel="View all account activity"
+        onActionPress={handleViewAllPress}
+      />
 
       {/* Activities List */}
       <View style={styles.listContainer}>
@@ -54,6 +48,7 @@ export default function ActivityCard({ activities }: ActivityCardProps) {
             <React.Fragment key={activity.id}>
               <ActivityRow
                 activity={activity}
+                balanceVisible={balanceVisible}
                 onPress={() => handleActivityRowPress(activity.id, activity.accountId)}
               />
               {/* Optional thin divider between rows (not after the last item) */}
@@ -62,58 +57,22 @@ export default function ActivityCard({ activities }: ActivityCardProps) {
           ))
         )}
       </View>
-    </View>
+    </Surface>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
     paddingHorizontal: 22,
-    paddingTop: 24,
+    paddingTop: 14,
     paddingBottom: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#F0F1F3",
-    // Premium soft card shadow
-    shadowColor: "#111827",
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  viewAllButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  viewAllPressed: {
-    opacity: 0.7,
-  },
-  viewAllText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FF8500",
   },
   listContainer: {
     marginTop: 8,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "#E8EBEF",
+    backgroundColor: appColors.divider,
     marginVertical: 2,
   },
   emptyContainer: {
@@ -124,11 +83,11 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#111827",
+    color: appColors.textPrimary,
   },
   emptySubtext: {
     fontSize: 14,
-    color: "#7B8492",
+    color: appColors.textSecondary,
     marginTop: 4,
     textAlign: "center",
   },

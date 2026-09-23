@@ -1,23 +1,39 @@
 {
   "expo": {
-    "name": "wealth-advisory",
+    "name": "IDBI Wealth Advisory",
     "slug": "wealth-advisory",
     "version": "1.0.0",
+    "icon": "./assets/branding/idbi-app-logo.png",
     "orientation": "portrait",
+    "splash": {
+      "image": "./assets/branding/idbi-app-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#007A6C"
+    },
     "scheme": "wealthadvisory",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.wealth-advisory"
+      "bundleIdentifier": "com.anonymous.wealth-advisory.test1234",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera access is used to scan QR codes.",
+        "NSLocalNetworkUsageDescription": "IDBI Wealth Advisory uses the local network to connect to the development banking service.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
-      "package": "com.anonymous.wealthadvisory",
+      "package": "com.idbi.wealthadvisory",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE"
+        "foregroundImage": "./assets/branding/idbi-app-logo.png",
+        "backgroundColor": "#007A6C"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": []
     },
     "web": {
       "output": "static"
@@ -43,9 +59,10 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#ffffff",
+          "image": "./assets/branding/idbi-app-logo.png",
+          "backgroundColor": "#007A6C",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#007A6C"
           }
         }
       ],
@@ -61,6 +78,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e7e77571-c280-4a83-b26a-afe1f8256ae4"
+      }
+    },
+    "owner": "raunakkanoji"
   }
 }

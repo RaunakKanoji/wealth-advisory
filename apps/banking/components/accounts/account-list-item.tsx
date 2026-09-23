@@ -1,273 +1,389 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import React from "react";
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { formatMaturityDate } from "@/lib/date";
-import { formatIndianCurrency } from "@/lib/currency";
-import type { AccountType, BankAccount } from "@/types/banking";
+import { appColors, appRadii, appSpacing, appTypography } from "@/components/theme/tokens";
+import { formatIndianMinorUnits } from "@/lib/currency";
+import { formatDate } from "@/lib/date";
+import type {
+  AccountOverviewAction,
+  AccountOverviewItem,
+  AccountType,
+} from "@/types/banking";
 
-import { accountColors } from "./tokens";
+import { PrivateAmount } from "./private-amount";
+
+export type AccountCardAction = AccountOverviewAction;
 
 type AccountListItemProps = {
-  account: BankAccount;
-  isLast: boolean;
+  account: AccountOverviewItem;
+  isBalanceVisible: boolean;
   onPress: () => void;
+  onActionPress: (action: AccountCardAction) => void;
 };
 
-function getAccountIcon(type: AccountType) {
+const actionPresentation: Record<
+  AccountOverviewAction,
+  { label: string; icon: React.ComponentProps<typeof Ionicons>["name"] }
+> = {
+  transfer: { label: "Transfer", icon: "arrow-up-outline" },
+  statement: { label: "Statement", icon: "document-text-outline" },
+  details: { label: "Details", icon: "chevron-forward-outline" },
+  maturity: { label: "Maturity", icon: "calendar-outline" },
+  schedule: { label: "Schedule", icon: "repeat-outline" },
+};
+
+function getAccountIcon(type: AccountType): React.ComponentProps<typeof Ionicons>["name"] {
   switch (type) {
     case "current":
-      return { name: "scale-balance" as const, color: accountColors.brandOrange };
+      return "briefcase-outline";
     case "fixed-deposit":
-      return { name: "cash" as const, color: accountColors.brandGreen };
+      return "lock-closed-outline";
     case "recurring-deposit":
-      return { name: "history" as const, color: accountColors.brandOrange };
+      return "calendar-outline";
     case "savings":
     case "salary":
     default:
-      return { name: "bank" as const, color: accountColors.brandGreen };
+      return "wallet-outline";
   }
 }
 
-function getAccountIconBackground(type: AccountType) {
-  return type === "current" || type === "recurring-deposit"
-    ? accountColors.brandOrangeSoft
-    : accountColors.brandGreenSoft;
+function formatInterestRate(value?: string): string {
+  const rate = value?.trim();
+  if (!rate) return "Rate unavailable";
+  if (/p\.?\s*a\.?/i.test(rate)) return rate;
+  return `${rate.includes("%") ? rate : `${rate}%`} p.a.`;
+}
+
+function privateAccessibilityLabel(
+  label: string,
+  amountMinorUnits: number | null,
+  isVisible: boolean,
+): string {
+  if (amountMinorUnits === null) return `${label} unavailable`;
+  return `${label}, ${isVisible ? formatIndianMinorUnits(amountMinorUnits) : "amount hidden"}`;
+}
+
+function accountAccessibilityLabel(
+  account: AccountOverviewItem,
+  isBalanceVisible: boolean,
+): string {
+  const parts = [
+    `Open ${account.displayName}`,
+    `${account.typeLabel}, account ending in ${account.lastFour}`,
+    account.isPrimary ? "Primary account" : null,
+    privateAccessibilityLabel(
+      account.mainBalanceLabel,
+      account.mainBalanceMinorUnits,
+      isBalanceVisible,
+    ),
+    account.status !== "active" ? `Status ${account.status}` : null,
+  ];
+
+  if (account.productKind === "fixed-deposit") {
+    const maturity = account.maturityDate
+      ? `Matures ${formatDate(account.maturityDate)}`
+      : "Maturity date unavailable";
+    parts.push(`${formatInterestRate(account.interestRate)}, ${maturity}`);
+  }
+
+  if (account.productKind === "recurring-deposit") {
+    const contributionLabel = account.contributionFrequency === "Quarterly"
+      ? "Quarterly contribution"
+      : "Monthly contribution";
+    parts.push(
+      privateAccessibilityLabel(
+        contributionLabel,
+        account.monthlyContributionMinorUnits,
+        isBalanceVisible,
+      ),
+      account.nextDepositDate
+        ? `Next deposit ${formatDate(account.nextDepositDate)}`
+        : "Next deposit unavailable",
+    );
+  }
+
+  return parts.filter((part): part is string => Boolean(part)).join(". ");
 }
 
 export function AccountListItem({
   account,
-  isLast,
+  isBalanceVisible,
   onPress,
+  onActionPress,
 }: AccountListItemProps) {
-  const { width } = useWindowDimensions();
-  const isSmall = width < 375;
   const icon = getAccountIcon(account.type);
-  const isDeposit = account.type === "fixed-deposit" || account.type === "recurring-deposit";
-  const accountLabel = account.nickname || account.name;
-  const balanceLabel = account.availableBalanceMinorUnits !== undefined
-    ? "Available balance"
-    : account.type === "fixed-deposit"
-      ? "Principal"
-      : isDeposit
-        ? "Reported balance"
-        : "Reported balance";
-  const statusText = account.status === "active" ? "Active" : account.status;
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${accountLabel} ending in ${account.lastFour}`}
-      accessibilityHint="Opens account details"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        { paddingHorizontal: isSmall ? 16 : 20 },
-        !isLast && styles.divider,
-        pressed && styles.pressed,
-      ]}
-    >
-      <View
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={[
-          styles.iconContainer,
-          { backgroundColor: getAccountIconBackground(account.type) },
-        ]}
+    <View style={styles.card}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={accountAccessibilityLabel(account, isBalanceVisible)}
+        accessibilityHint="Opens account details"
+        onPress={onPress}
+        style={({ pressed }) => [styles.cardContent, pressed && styles.cardPressed]}
       >
-        <MaterialCommunityIcons name={icon.name} size={25} color={icon.color} />
-      </View>
-
-      <View style={styles.nameColumn}>
-        <View style={styles.nameRow}>
-          <Text
-            numberOfLines={2}
-            style={[styles.accountName, isSmall && styles.accountNameSmall]}
+        <View style={styles.cardHeader}>
+          <View
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={styles.iconContainer}
           >
-            {accountLabel}
-          </Text>
-          {account.isPrimary ? (
-            <View style={styles.primaryBadge}>
-              <Text style={styles.primaryBadgeText}>Primary</Text>
+            <Ionicons name={icon} size={21} color={appColors.primaryPressed} />
+          </View>
+
+          <View style={styles.headerCopy}>
+            <View style={styles.nameRow}>
+              <Text numberOfLines={1} style={styles.accountName}>{account.displayName}</Text>
+              {account.isPrimary ? (
+                <View style={styles.primaryBadge}>
+                  <Text style={styles.primaryBadgeText}>Primary</Text>
+                </View>
+              ) : null}
             </View>
+            <Text
+              accessibilityLabel={`Account ending in ${account.lastFour}`}
+              numberOfLines={1}
+              style={styles.maskedNumber}
+            >
+              {account.typeLabel} •••• {account.lastFour}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.balanceBlock}>
+          <Text style={styles.balanceLabel}>{account.mainBalanceLabel}</Text>
+          <PrivateAmount
+            accessibilityLabel={privateAccessibilityLabel(
+              account.mainBalanceLabel,
+              account.mainBalanceMinorUnits,
+              isBalanceVisible,
+            )}
+            amountMinorUnits={account.mainBalanceMinorUnits}
+            unavailableLabel="Unavailable"
+            visible={isBalanceVisible}
+            style={styles.amount}
+          />
+          {account.status !== "active" ? (
+            <Text style={styles.status}>{account.status}</Text>
           ) : null}
         </View>
-        <Text
-          accessibilityLabel={`Account ending in ${account.lastFour}`}
-          numberOfLines={1}
-          style={styles.maskedNumber}
-        >
-          •••• {account.lastFour}
-        </Text>
-        <Text numberOfLines={1} style={styles.productType}>
-          {account.name}
-        </Text>
-      </View>
 
-      <View style={[styles.amountColumn, isSmall && styles.amountColumnSmall]}>
-        <Text
-          adjustsFontSizeToFit
-          minimumFontScale={0.78}
-          numberOfLines={1}
-          style={[styles.amount, isSmall && styles.amountSmall]}
-        >
-          {formatIndianCurrency(
-            account.availableBalance ?? account.balance,
-          ).replace("₹ ", "₹")}
-        </Text>
-        <Text
-          numberOfLines={1}
-          style={[
-            styles.status,
-            account.status === "active" ? styles.availableStatus : styles.maturityStatus,
-          ]}
-        >
-          {statusText}
-        </Text>
-        <Text numberOfLines={1} style={styles.balanceLabel}>
-          {balanceLabel}
-        </Text>
-        {account.maturityDate ? (
-          <Text numberOfLines={1} style={styles.maturityDate}>
-            {formatMaturityDate(account.maturityDate)}
+        {account.productKind === "fixed-deposit" ? (
+          <Text style={styles.productSupport}>
+            {formatInterestRate(account.interestRate)} · {account.maturityDate ? `Matures ${formatDate(account.maturityDate)}` : "Maturity date unavailable"}
           </Text>
         ) : null}
-      </View>
 
-      <View style={styles.chevronTarget}>
-        <Ionicons
-          name="chevron-forward"
-          size={22}
-          color="#C2C8D0"
-        />
+        {account.productKind === "recurring-deposit" ? (
+          <View style={styles.depositMetrics}>
+            <DepositMetric label={account.contributionFrequency === "Quarterly" ? "Quarterly contribution" : "Monthly contribution"}>
+              <PrivateAmount
+                accessibilityLabel={privateAccessibilityLabel(
+                  account.contributionFrequency === "Quarterly" ? "Quarterly contribution" : "Monthly contribution",
+                  account.monthlyContributionMinorUnits,
+                  isBalanceVisible,
+                )}
+                amountMinorUnits={account.monthlyContributionMinorUnits}
+                unavailableLabel="Unavailable"
+                visible={isBalanceVisible}
+                style={styles.depositMetricValue}
+              />
+            </DepositMetric>
+            <DepositMetric label="Next deposit">
+              <Text numberOfLines={1} style={styles.depositMetricValue}>
+                {account.nextDepositDate ? formatDate(account.nextDepositDate) : "Unavailable"}
+              </Text>
+            </DepositMetric>
+          </View>
+        ) : null}
+      </Pressable>
+
+      <View style={styles.actionDivider} />
+      <View style={styles.actionRow}>
+        {account.actions.map((action) => {
+          const presentation = actionPresentation[action];
+          return (
+            <Pressable
+              key={action}
+              accessibilityRole="button"
+              accessibilityLabel={`${presentation.label} for ${account.displayName}`}
+              onPress={() => onActionPress(action)}
+              style={({ pressed }) => [styles.actionButton, pressed && styles.actionPressed]}
+            >
+              <Ionicons name={presentation.icon} size={18} color={appColors.primaryPressed} />
+              <Text numberOfLines={1} style={styles.actionLabel}>{presentation.label}</Text>
+            </Pressable>
+          );
+        })}
       </View>
-    </Pressable>
+    </View>
+  );
+}
+
+function DepositMetric({
+  children,
+  label,
+}: {
+  children: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <View style={styles.depositMetric}>
+      <Text numberOfLines={1} style={styles.depositMetricLabel}>{label}</Text>
+      {children}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    minHeight: 104,
+  card: {
+    overflow: "hidden",
+    borderRadius: appRadii.card,
+    backgroundColor: appColors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: appColors.border,
+  },
+  cardContent: {
+    paddingHorizontal: 18,
+    paddingTop: appSpacing.lg,
+    paddingBottom: appSpacing.md,
+  },
+  cardPressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.995 }],
+  },
+  cardHeader: {
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 18,
-    backgroundColor: accountColors.surface,
   },
   iconContainer: {
-    width: 50,
-    height: 50,
+    width: 44,
+    height: 44,
+    flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 25,
+    borderRadius: appRadii.round,
+    backgroundColor: appColors.primarySoft,
   },
-  nameColumn: {
+  headerCopy: {
     flex: 1,
     minWidth: 0,
-    marginLeft: 14,
-  },
-  accountName: {
-    flex: 1,
-    color: accountColors.textPrimary,
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "600",
-  },
-  accountNameSmall: {
-    fontSize: 15,
+    marginLeft: appSpacing.md,
   },
   nameRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    columnGap: 6,
+    alignItems: "center",
+    minWidth: 0,
   },
-  primaryBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 7,
-    backgroundColor: accountColors.brandGreenSoft,
-  },
-  primaryBadgeText: {
-    color: accountColors.brandGreenDark,
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: "700",
+  accountName: {
+    flex: 1,
+    minWidth: 0,
+    color: appColors.textPrimary,
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "600",
   },
   maskedNumber: {
     marginTop: 2,
-    color: "#9CA3AF",
-    fontSize: 14,
-    lineHeight: 19,
-    fontWeight: "400",
+    color: appColors.textSecondary,
+    ...appTypography.supporting,
   },
-  productType: {
-    marginTop: 1,
-    color: accountColors.textSecondary,
+  primaryBadge: {
+    flexShrink: 0,
+    marginLeft: appSpacing.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: appRadii.round,
+    backgroundColor: appColors.primarySoft,
+  },
+  primaryBadgeText: {
+    color: appColors.primaryPressed,
     fontSize: 12,
     lineHeight: 16,
+    fontWeight: "600",
   },
-  amountColumn: {
-    width: 126,
-    alignItems: "flex-end",
-    marginLeft: 8,
-  },
-  amountColumnSmall: {
-    width: 112,
-  },
-  amount: {
-    width: "100%",
-    color: accountColors.textPrimary,
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "700",
-    textAlign: "right",
-  },
-  amountSmall: {
-    fontSize: 15,
-  },
-  status: {
-    width: "100%",
-    marginTop: 3,
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: "right",
+  balanceBlock: {
+    marginTop: appSpacing.md,
   },
   balanceLabel: {
-    width: "100%",
-    marginTop: 1,
-    color: accountColors.textSecondary,
-    fontSize: 11,
-    lineHeight: 15,
-    textAlign: "right",
+    color: appColors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
   },
-  maturityDate: {
-    width: "100%",
-    marginTop: 1,
-    color: accountColors.textSecondary,
-    fontSize: 11,
-    lineHeight: 15,
-    textAlign: "right",
+  amount: {
+    marginTop: 2,
+    color: appColors.textPrimary,
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: "700",
   },
-  availableStatus: {
-    color: accountColors.brandGreen,
-    fontWeight: "500",
+  status: {
+    marginTop: 2,
+    color: appColors.warning,
+    ...appTypography.metadata,
+    fontWeight: "700",
+    textTransform: "capitalize",
   },
-  maturityStatus: {
-    color: "#9CA3AF",
-    fontWeight: "400",
+  productSupport: {
+    marginTop: appSpacing.sm,
+    color: appColors.textSecondary,
+    ...appTypography.metadata,
   },
-  chevronTarget: {
-    width: 22,
-    height: 48,
+  depositMetrics: {
+    flexDirection: "row",
+    columnGap: appSpacing.lg,
+    marginTop: appSpacing.md,
+  },
+  depositMetric: {
+    flex: 1,
+    minWidth: 0,
+  },
+  depositMetricLabel: {
+    color: appColors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  depositMetricValue: {
+    marginTop: 2,
+    color: appColors.textPrimary,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  actionDivider: {
+    marginHorizontal: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: appColors.divider,
+  },
+  actionRow: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: appSpacing.sm,
+    paddingVertical: 2,
+  },
+  actionButton: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 4,
+    columnGap: 6,
+    paddingHorizontal: 3,
+    borderRadius: appRadii.control,
   },
-  divider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: accountColors.divider,
+  actionLabel: {
+    flexShrink: 1,
+    color: appColors.primaryPressed,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "600",
   },
-  pressed: {
-    backgroundColor: "#FBFCFC",
+  actionPressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.98 }],
   },
 });

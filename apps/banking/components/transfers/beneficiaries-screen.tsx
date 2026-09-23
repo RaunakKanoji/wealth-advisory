@@ -7,19 +7,20 @@ import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Tex
 import { DEMO_CUSTOMER_A } from "@/data/accounts-demo-data";
 import { archiveBeneficiary, createBeneficiary, getBeneficiaries, updateBeneficiaryNickname } from "@/services/transfer-service";
 import type { Beneficiary } from "@/types/transfers";
+import { appColors } from "@/components/theme/tokens";
 
 const colors = {
-  background: "#F7F8FA",
-  surface: "#FFFFFF",
-  text: "#111827",
-  secondary: "#6F7888",
-  muted: "#98A1AE",
-  green: "#007E5D",
-  greenDark: "#006647",
-  greenSoft: "#E9F5F2",
-  orange: "#F45B2A",
-  border: "#E8EBEF",
-  danger: "#A62B32",
+  background: appColors.background,
+  surface: appColors.surface,
+  text: appColors.textPrimary,
+  secondary: appColors.textSecondary,
+  muted: appColors.textMuted,
+  green: appColors.primary,
+  greenDark: appColors.primaryPressed,
+  greenSoft: appColors.primarySoft,
+  orange: appColors.orangeText,
+  border: appColors.border,
+  danger: appColors.danger,
 };
 
 function firstParam(value: string | string[] | undefined): string | undefined { return Array.isArray(value) ? value[0] : value; }

@@ -1,3 +1,5 @@
+// Fixture tests explicitly opt into mock data; runtime defaults remain remote.
+process.env.EXPO_PUBLIC_USE_MOCK_DATA = "true";
 // expo-network's real listener teardown (listener.remove) is not callable in
 // the jest environment, so it throws during passive-effect unmount and crashes
 // every test that renders a <Screen> (Screen mounts OfflineBanner, which reads

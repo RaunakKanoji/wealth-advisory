@@ -14,12 +14,14 @@ type AccountCarouselProps = {
   accounts: BankAccount[];
   activeIndex: number;
   onIndexChange: (index: number) => void;
+  isBalanceVisible: boolean;
 };
 
 export default function AccountCarousel({
   accounts,
   activeIndex,
   onIndexChange,
+  isBalanceVisible,
 }: AccountCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
   const isTablet = screenWidth >= 768;
@@ -49,7 +51,7 @@ export default function AccountCarousel({
   const renderItem = ({ item }: { item: BankAccount }) => {
     return (
       <View style={{ width: cardWidth }}>
-        <AccountCard account={item} />
+        <AccountCard account={item} isBalanceVisible={isBalanceVisible} />
       </View>
     );
   };
@@ -72,7 +74,7 @@ export default function AccountCarousel({
           paddingLeft: 20,
           paddingRight: 20,
           paddingTop: 4,
-          paddingBottom: 20, // Preserve space for the card shadow
+          paddingBottom: 12, // Preserve a compact shadow-safe gap before pagination
           columnGap: gap,
         }}
         // Prevent scrollToIndex out of bounds warning

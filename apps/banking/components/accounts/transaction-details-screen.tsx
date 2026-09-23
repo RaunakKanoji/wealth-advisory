@@ -17,10 +17,11 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { accountColors, softCardShadow } from "@/components/accounts/tokens";
+import { useBalanceVisibility } from "@/components/accounts/use-balance-visibility";
 import { DEMO_CUSTOMER_A } from "@/data/accounts-demo-data";
-import { formatIndianMinorUnits } from "@/lib/currency";
+import { formatTransactionAmount } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
-import { getAccount, getAccountPreference, getTransaction, updateTransactionAnnotation, TRANSACTION_CATEGORIES } from "@/services/accounts-service";
+import { getAccount, getTransaction, updateTransactionAnnotation, TRANSACTION_CATEGORIES } from "@/services/accounts-service";
 import type { TransactionCategory } from "@/types/banking";
 
 const categoryLabels: Record<TransactionCategory, string> = {
@@ -43,7 +44,7 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 export function TransactionDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useUser();
+  const { user, isLoaded: isUserLoaded } = useUser();
   const { transactionId: rawTransactionId, accountId: rawAccountId } = useLocalSearchParams<{
     transactionId?: string | string[];
     accountId?: string | string[];
@@ -51,9 +52,9 @@ export function TransactionDetailsScreen() {
   const transactionId = firstParam(rawTransactionId);
   const accountId = firstParam(rawAccountId);
   const customerId = user?.id ?? DEMO_CUSTOMER_A;
+  const { balanceVisible, isBalanceVisibilityHydrated } = useBalanceVisibility(customerId, isUserLoaded);
   const [transaction, setTransaction] = useState<Awaited<ReturnType<typeof getTransaction>>>(undefined);
   const [account, setAccount] = useState<Awaited<ReturnType<typeof getAccount>>>(undefined);
-  const [balanceVisible, setBalanceVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -67,6 +68,9 @@ export function TransactionDetailsScreen() {
     let active = true;
     setIsLoading(true);
     setLoadError(null);
+    setIsEditOpen(false);
+    setNote("");
+    setSavedMessage(null);
 
     if (!accountId || !transactionId) {
       setIsLoading(false);
@@ -79,9 +83,8 @@ export function TransactionDetailsScreen() {
     void Promise.all([
       getAccount(accountId, { customerId }),
       getTransaction(accountId, transactionId, { customerId }),
-      getAccountPreference(accountId, { customerId }),
     ])
-      .then(([nextAccount, nextTransaction, preference]) => {
+      .then(([nextAccount, nextTransaction]) => {
         if (!active) return;
         if (!nextAccount || !nextTransaction) {
           setLoadError("This transaction is unavailable or does not belong to the selected account.");
@@ -89,7 +92,6 @@ export function TransactionDetailsScreen() {
         }
         setAccount(nextAccount);
         setTransaction(nextTransaction);
-        setBalanceVisible(preference.balanceVisible !== false);
         setCategory(nextTransaction.annotation?.category ?? nextTransaction.originalCategory);
         setNote(nextTransaction.annotation?.note ?? "");
       })
@@ -142,7 +144,7 @@ export function TransactionDetailsScreen() {
     }
   };
 
-  if (isLoading) {
+  if (!isUserLoaded || !isBalanceVisibilityHydrated || isLoading) {
     return <View style={styles.loading}><ActivityIndicator color={accountColors.brandGreenDark} size="large" /><Text style={styles.loadingText}>Loading transaction details…</Text></View>;
   }
 
@@ -151,7 +153,7 @@ export function TransactionDetailsScreen() {
   }
 
   const isCredit = transaction.direction === "credit";
-  const displayedAmount = balanceVisible ? `${isCredit ? "+" : "−"}${formatIndianMinorUnits(transaction.amountMinorUnits)}` : "Amount hidden";
+  const displayedAmount = balanceVisible ? formatTransactionAmount(transaction.amountMinorUnits, isCredit ? "credit" : "debit") : "Amount hidden";
 
   return (
     <View style={styles.screen}>
@@ -213,7 +215,7 @@ const styles = StyleSheet.create({
   heroTitle: { maxWidth: "100%", marginTop: 15, color: accountColors.textPrimary, fontSize: 21, lineHeight: 28, fontWeight: "700", textAlign: "center" },
   heroAmount: { marginTop: 11, fontSize: 29, lineHeight: 37, fontWeight: "700" },
   creditAmount: { color: accountColors.brandGreenDark },
-  debitAmount: { color: accountColors.textPrimary },
+  debitAmount: { color: accountColors.danger },
   statusPill: { marginTop: 10, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: "#FFF4D8" },
   statusText: { color: "#8A5A10", fontSize: 12, fontWeight: "700", textTransform: "capitalize" },
   infoCard: { marginTop: 16, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 18, backgroundColor: accountColors.surface, borderWidth: 1, borderColor: accountColors.border, ...softCardShadow },

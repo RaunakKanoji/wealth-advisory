@@ -8,14 +8,16 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { formatIndianCurrency } from "../../lib/currency";
 import { BankAccount } from "../../types/banking";
+import { PrivateAmount } from "@/components/accounts/private-amount";
+import { appColors, appShadows, appTypography } from "@/components/theme/tokens";
 
 type AccountCardProps = {
   account: BankAccount;
+  isBalanceVisible: boolean;
 };
 
-export default function AccountCard({ account }: AccountCardProps) {
+export default function AccountCard({ account, isBalanceVisible }: AccountCardProps) {
   const router = useRouter();
   const { width } = useWindowDimensions();
 
@@ -28,20 +30,19 @@ export default function AccountCard({ account }: AccountCardProps) {
   const cardPaddingHoriz = isSmall ? 20 : 24;
   const cardPaddingVert = isSmall ? 16 : 20;
 
-  const formattedBalance = formatIndianCurrency(
-    account.availableBalance ?? account.balance,
-  );
-  // Keep long Indian-format balances on one line, including amounts around ₹100 Cr.
-  const balanceFontSize = Math.max(
-    isSmall ? 22 : 24,
-    Math.round((isSmall ? 30 : 32) * Math.min(1, 14 / formattedBalance.length)),
-  );
+  const balanceMinorUnits = account.balanceDataAvailable === false
+    ? undefined
+    : account.availableBalanceMinorUnits ?? account.balanceMinorUnits;
+  const balanceFontSize = isSmall ? 22 : 24;
   const balanceLineHeight = Math.round(balanceFontSize * 1.22);
 
   const handleDetailsPress = () => {
     router.push({
       pathname: "/(app)/accounts/[accountId]",
-      params: { accountId: account.id },
+      params: {
+        accountId: account.id,
+        source: account.sourceEnvironment === "Demo data" ? "demo" : "remote",
+      },
     });
   };
 
@@ -87,17 +88,11 @@ export default function AccountCard({ account }: AccountCardProps) {
       {/* Available Balance */}
       <View style={styles.balanceContainer}>
         <Text style={styles.balanceLabel}>Available Balance</Text>
-        <Text
-          numberOfLines={1}
-          adjustsFontSizeToFit
-            minimumFontScale={0.65}
-          style={[
-            styles.balanceText,
-            { fontSize: balanceFontSize, lineHeight: balanceLineHeight },
-          ]}
-        >
-          {formattedBalance}
-        </Text>
+        <PrivateAmount
+          amountMinorUnits={balanceMinorUnits}
+          visible={isBalanceVisible}
+          style={[styles.balanceText, { fontSize: balanceFontSize, lineHeight: balanceLineHeight }]}
+        />
       </View>
 
       {/* Card Divider */}
@@ -133,20 +128,12 @@ export default function AccountCard({ account }: AccountCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#008764",
+    backgroundColor: appColors.primary,
     borderRadius: 24,
     justifyContent: "space-between",
     alignSelf: "center",
     // iOS shadow matching instructions
-    shadowColor: "#001E17",
-    shadowOffset: {
-      width: 0,
-      height: 12,
-    },
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    // Android shadow
-    elevation: 8,
+    ...appShadows.hero,
   },
   headerRow: {
     flexDirection: "row",
@@ -154,7 +141,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   accountType: {
-    fontSize: 17,
+    fontSize: 15,
     lineHeight: 23,
     fontWeight: "500",
     letterSpacing: 0.6,
@@ -175,13 +162,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   balanceLabel: {
-    fontSize: 16,
+    fontSize: 14,
     lineHeight: 22,
     fontWeight: "400",
     color: "rgba(255,255,255,0.78)",
   },
   balanceText: {
-    fontWeight: "700",
+    ...appTypography.heroAmount,
     color: "#FFFFFF",
     marginTop: 4,
   },
@@ -196,7 +183,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   accountNumberLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "400",
     color: "#FFFFFF",
     letterSpacing: 0.4,

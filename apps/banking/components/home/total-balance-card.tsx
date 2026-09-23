@@ -7,7 +7,8 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { formatIndianCurrency } from "../../lib/currency";
+import { formatINR } from "../../lib/currency";
+import { appColors, appRadii, appShadows } from "@/components/theme/tokens";
 
 type TotalBalanceCardProps = {
   balance: number;
@@ -50,7 +51,7 @@ export default function TotalBalanceCard({ balance }: TotalBalanceCardProps) {
             <Ionicons
               name={isBalanceVisible ? "eye-outline" : "eye-off-outline"}
               size={20}
-              color="#737D8C"
+              color={appColors.textSecondary}
             />
           </Pressable>
         </View>
@@ -64,7 +65,7 @@ export default function TotalBalanceCard({ balance }: TotalBalanceCardProps) {
             { fontSize: balanceFontSize, lineHeight: balanceLineHeight },
           ]}
         >
-          {isBalanceVisible ? formatIndianCurrency(balance) : "₹ ••••••••"}
+          {isBalanceVisible ? formatINR(balance) : "₹ ••••••••"}
         </Text>
 
         <Text style={styles.supportText}>Across all accounts</Text>
@@ -77,7 +78,7 @@ export default function TotalBalanceCard({ balance }: TotalBalanceCardProps) {
           { width: iconContainerSize, height: iconContainerSize },
         ]}
       >
-        <Ionicons name="business" size={iconSize} color="#A2AAB7" />
+        <Ionicons name="business" size={iconSize} color={appColors.iconMuted} />
       </View>
     </View>
   );
@@ -85,8 +86,8 @@ export default function TotalBalanceCard({ balance }: TotalBalanceCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
+    backgroundColor: appColors.surface,
+    borderRadius: appRadii.hero,
     minHeight: 145,
     paddingHorizontal: 24,
     paddingVertical: 22,
@@ -94,16 +95,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#F0F1F3",
-    // Premium soft card shadow
-    shadowColor: "#111827",
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
+    borderColor: appColors.border,
+    ...appShadows.surface,
   },
   leftPanel: {
     flex: 1,
@@ -116,7 +109,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: "500",
-    color: "#737D8C",
+    color: appColors.textSecondary,
   },
   eyeButton: {
     marginLeft: 8,
@@ -127,22 +120,22 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   eyeButtonPressed: {
-    backgroundColor: "#F3F4F6",
+    backgroundColor: appColors.surfaceMuted,
   },
   balanceText: {
     fontWeight: "700",
-    color: "#111827",
+    color: appColors.textPrimary,
     marginTop: 12,
   },
   supportText: {
     fontSize: 16,
     fontWeight: "500",
-    color: "#00866A",
+    color: appColors.primary,
     marginTop: 6,
   },
   iconContainer: {
-    borderRadius: 18,
-    backgroundColor: "#F2F3F5",
+    borderRadius: appRadii.tile,
+    backgroundColor: appColors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },

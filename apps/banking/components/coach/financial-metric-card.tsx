@@ -1,92 +1,73 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import React from "react";
-import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
-import { formatIndianCurrencyWithoutSpace } from "@/lib/currency";
+import { formatINR } from "@/lib/currency";
+import { formatPercentage } from "@/lib/percentage";
 import type { FinancialMetric } from "@/types/wealth-coach";
 
 import { coachColors } from "./tokens";
 
 type FinancialMetricCardProps = {
+  compact?: boolean;
   metric: FinancialMetric;
+  showDivider?: boolean;
 };
 
-function renderMetricIcon(metric: FinancialMetric, isWide: boolean) {
+function renderMetricIcon(metric: FinancialMetric) {
+  if (metric.id === "expenses") {
+    return <Ionicons name="wallet-outline" size={18} color={coachColors.brandGreen} />;
+  }
+
   if (metric.icon === "piggy-bank") {
-    return (
-      <MaterialCommunityIcons
-        name="piggy-bank"
-        size={isWide ? 31 : 22}
-        color={coachColors.brandGreen}
-      />
-    );
+    return <Ionicons name="cash-outline" size={18} color={coachColors.brandGreen} />;
   }
 
   if (metric.icon === "target") {
-    return (
-      <MaterialCommunityIcons
-        name="target"
-        size={isWide ? 33 : 23}
-        color={coachColors.brandGreen}
-      />
-    );
+    return <Ionicons name="flag-outline" size={18} color={coachColors.brandGreen} />;
   }
 
-  return (
-    <Ionicons name="trending-up" size={isWide ? 31 : 22} color={coachColors.brandGreen} />
-  );
+  return <Ionicons name="analytics-outline" size={18} color={coachColors.brandGreen} />;
 }
 
 function formatMetricValue(metric: FinancialMetric): string {
   if (metric.format === "percentage") {
-    return `${metric.value}%`;
+    const sign = metric.showSign && metric.value > 0 ? "+" : "";
+    return `${sign}${formatPercentage(metric.value)}`;
   }
 
   if (metric.format === "currency") {
-    return formatIndianCurrencyWithoutSpace(metric.value);
+    return formatINR(metric.value);
   }
 
   return `${metric.value}`;
 }
 
-export function FinancialMetricCard({ metric }: FinancialMetricCardProps) {
-  const { width } = useWindowDimensions();
-  const isSmall = width < 375;
-  const isWide = width >= 600;
-  const valueColor = metric.trend === "negative" ? coachColors.brandOrange : coachColors.brandGreen;
+export function FinancialMetricCard({ compact = false, metric, showDivider = false }: FinancialMetricCardProps) {
+  const valueColor = metric.trend === "negative"
+    ? coachColors.brandOrange
+    : metric.trend === "positive"
+      ? coachColors.brandGreen
+      : coachColors.textPrimary;
+  const formattedValue = formatMetricValue(metric);
 
   return (
     <View
       accessible
-      accessibilityLabel={`${metric.label}, ${formatMetricValue(metric)}, ${metric.supportingLabel}`}
-      style={[styles.metricCard, isSmall && styles.metricCardSmall, isWide && styles.metricCardWide]}
+      accessibilityLabel={`${metric.label}, ${formattedValue}, ${metric.supportingLabel}`}
+      style={[styles.metricCard, compact && styles.metricCardCompact, showDivider && styles.metricCardDivider]}
     >
-      <View
-        style={[
-          styles.iconContainer,
-          isSmall && styles.iconContainerSmall,
-          isWide && styles.iconContainerWide,
-        ]}
-      >
-        {renderMetricIcon(metric, isWide)}
-      </View>
-      <Text style={[styles.label, isWide && styles.labelWide]} numberOfLines={2}>
-        {metric.label}
-      </Text>
+      <View style={styles.iconContainer}>{renderMetricIcon(metric)}</View>
+      <Text numberOfLines={1} style={styles.label}>{metric.label}</Text>
       <Text
-        style={[
-          styles.value,
-          isSmall && styles.valueSmall,
-          isWide && styles.valueWide,
-          { color: valueColor },
-        ]}
+        adjustsFontSizeToFit
+        minimumFontScale={0.68}
+        numberOfLines={1}
+        style={[styles.value, compact && styles.valueCompact, { color: valueColor }]}
       >
-        {formatMetricValue(metric)}
+        {formattedValue}
       </Text>
-      <Text style={[styles.supportingLabel, isWide && styles.supportingLabelWide]} numberOfLines={2}>
-        {metric.supportingLabel}
-      </Text>
+      <Text numberOfLines={1} style={styles.supportingLabel}>{metric.supportingLabel}</Text>
     </View>
   );
 }
@@ -94,86 +75,51 @@ export function FinancialMetricCard({ metric }: FinancialMetricCardProps) {
 const styles = StyleSheet.create({
   metricCard: {
     flex: 1,
-    minHeight: 142,
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 16,
-    borderRadius: 20,
-    backgroundColor: coachColors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: coachColors.divider,
-    shadowColor: coachColors.textPrimary,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    minWidth: 0,
+    minHeight: 93,
+    paddingHorizontal: 8,
   },
-  metricCardSmall: {
-    paddingHorizontal: 7,
-    paddingVertical: 13,
+  metricCardCompact: {
+    paddingHorizontal: 5,
   },
-  metricCardWide: {
-    minHeight: 220,
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-    borderRadius: 26,
+  metricCardDivider: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: coachColors.brandGreenBorder,
   },
   iconContainer: {
-    width: 52,
-    height: 52,
+    width: 32,
+    height: 32,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 26,
-    backgroundColor: coachColors.brandGreenSoft,
-  },
-  iconContainerSmall: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-  },
-  iconContainerWide: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    borderRadius: 16,
+    backgroundColor: coachColors.surface,
   },
   label: {
-    minHeight: 18,
-    marginTop: 12,
+    marginTop: 7,
+    flexShrink: 1,
     color: coachColors.textSecondary,
-    fontSize: 13,
-    lineHeight: 17,
-    textAlign: "center",
-  },
-  labelWide: {
-    minHeight: 23,
-    marginTop: 20,
-    fontSize: 18,
-    lineHeight: 23,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
   },
   value: {
-    marginTop: 2,
-    fontSize: 27,
-    lineHeight: 32,
+    marginTop: 1,
+    fontSize: 21,
+    lineHeight: 27,
     fontWeight: "700",
+    flexShrink: 1,
+    letterSpacing: -0.2,
   },
-  valueSmall: {
-    fontSize: 23,
-    lineHeight: 28,
-  },
-  valueWide: {
-    marginTop: 4,
-    fontSize: 37,
-    lineHeight: 45,
+  valueCompact: {
+    fontSize: 19,
+    lineHeight: 24,
+    letterSpacing: -0.35,
   },
   supportingLabel: {
     marginTop: 1,
+    flexShrink: 1,
     color: coachColors.textMuted,
-    fontSize: 12,
-    lineHeight: 16,
-    textAlign: "center",
-  },
-  supportingLabelWide: {
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

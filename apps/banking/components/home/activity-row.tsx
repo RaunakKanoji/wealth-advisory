@@ -1,27 +1,30 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { formatIndianCurrency } from "../../lib/currency";
+import { formatTransactionCurrency } from "../../lib/currency";
 import { BankingActivity } from "../../types/banking";
+import { appColors, appRadii } from "@/components/theme/tokens";
 
 type ActivityRowProps = {
   activity: BankingActivity;
+  balanceVisible?: boolean;
   onPress: () => void;
 };
 
-export default function ActivityRow({ activity, onPress }: ActivityRowProps) {
+export default function ActivityRow({ activity, balanceVisible = true, onPress }: ActivityRowProps) {
   const isCredit = activity.direction === "credit";
 
   // Determine styles and icons based on transaction direction
-  const iconContainerBg = isCredit ? "#E8F4F1" : "#F2F3F5";
-  const iconColor = isCredit ? "#00866A" : "#737D8C";
+  const iconContainerBg = isCredit ? appColors.primarySoft : appColors.surfaceMuted;
+  const iconColor = isCredit ? appColors.primary : appColors.textSecondary;
   const iconName = isCredit ? "arrow-down-outline" : "card-outline";
-  const amountColor = isCredit ? "#00866A" : "#111827";
-  const amountPrefix = isCredit ? "+" : "-";
+  const amountColor = isCredit ? appColors.primary : appColors.danger;
 
   // Create accessible label text
-  const formattedVal = formatIndianCurrency(activity.amount).replace("₹ ", "");
-  const a11yLabel = `${activity.title} ${activity.direction} of ${formattedVal} rupees on ${activity.timestamp}`;
+  const formattedVal = formatTransactionCurrency(activity.amount, activity.direction);
+  const a11yLabel = balanceVisible
+    ? `${activity.title} ${activity.direction} of ${formattedVal} rupees on ${activity.timestamp}`
+    : `${activity.title}, ${activity.direction} transaction, amount hidden, on ${activity.timestamp}`;
 
   return (
     <Pressable
@@ -46,9 +49,8 @@ export default function ActivityRow({ activity, onPress }: ActivityRowProps) {
       </View>
 
       {/* Transaction Amount */}
-      <Text style={[styles.activityAmount, { color: amountColor }]}>
-        {amountPrefix}
-        {formatIndianCurrency(activity.amount)}
+      <Text accessible={false} style={[styles.activityAmount, { color: balanceVisible ? amountColor : appColors.textSecondary }]}>
+        {balanceVisible ? formatTransactionCurrency(activity.amount, activity.direction) : "₹ ••••••••"}
       </Text>
     </Pressable>
   );
@@ -67,7 +69,7 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: appRadii.round,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -80,13 +82,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 21,
     fontWeight: "600",
-    color: "#111827",
+    color: appColors.textPrimary,
   },
   activitySubtitle: {
     fontSize: 14,
     lineHeight: 19,
     fontWeight: "400",
-    color: "#7B8492",
+    color: appColors.textSecondary,
     marginTop: 2,
   },
   activityAmount: {

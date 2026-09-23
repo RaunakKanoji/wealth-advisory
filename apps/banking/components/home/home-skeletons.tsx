@@ -1,38 +1,19 @@
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import {
-  Animated,
   ScrollView,
   StyleSheet,
   useWindowDimensions,
   View,
 } from "react-native";
 
+import { Skeleton, useSkeletonPulse } from "@/components/skeleton";
+
 export default function HomeSkeletons() {
   const { width } = useWindowDimensions();
-  const opacity = useRef(new Animated.Value(0.4)).current;
+  const opacity = useSkeletonPulse();
 
   const isSmall = width < 375;
   const isTablet = width >= 768;
-
-  // Set up pulsing animation
-  useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 0.8,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.4,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [opacity]);
 
   // Card responsive formulas matching account-carousel
   const cardWidth = isTablet ? 620 : width - 56;
@@ -43,7 +24,7 @@ export default function HomeSkeletons() {
     <View style={styles.container}>
       {/* 1. Greeting Skeleton (Padded) */}
       <View style={{ paddingHorizontal: 20 }}>
-        <Animated.View style={[styles.greetingSkeleton, { opacity }]} />
+        <Skeleton opacity={opacity} style={styles.greetingSkeleton} />
       </View>
 
       {/* 2. Account Card Skeleton Carousel (Full Width) */}
@@ -56,28 +37,30 @@ export default function HomeSkeletons() {
             paddingLeft: 20,
             paddingRight: 20,
             paddingTop: 4,
-            paddingBottom: 20,
+            paddingBottom: 12,
             columnGap: 16,
           }}
         >
-          <Animated.View
+          <Skeleton
             style={[
               styles.cardSkeleton,
-              { width: cardWidth, height: cardHeight, opacity },
+              { width: cardWidth, height: cardHeight },
             ]}
+            opacity={opacity}
           />
-          <Animated.View
+          <Skeleton
             style={[
               styles.cardSkeleton,
-              { width: cardWidth, height: cardHeight, opacity },
+              { width: cardWidth, height: cardHeight },
             ]}
+            opacity={opacity}
           />
         </ScrollView>
 
         {/* 3. Pagination Dots Skeleton */}
         <View style={styles.paginationRow}>
           {Array.from({ length: 4 }).map((_, i) => (
-            <Animated.View key={i} style={[styles.dotSkeleton, { opacity }]} />
+            <Skeleton key={i} opacity={opacity} style={styles.dotSkeleton} />
           ))}
         </View>
       </View>
@@ -88,13 +71,11 @@ export default function HomeSkeletons() {
         <View style={styles.quickActionsRow}>
           {Array.from({ length: 4 }).map((_, i) => (
             <View key={i} style={styles.quickActionCol}>
-              <Animated.View
-                style={[
-                  styles.quickActionBtn,
-                  { width: quickActionBtnSize, height: quickActionBtnSize, opacity },
-                ]}
+              <Skeleton
+                opacity={opacity}
+                style={[styles.quickActionBtn, { width: quickActionBtnSize, height: quickActionBtnSize }]}
               />
-              <Animated.View style={[styles.quickActionLabel, { opacity }]} />
+              <Skeleton opacity={opacity} style={styles.quickActionLabel} />
             </View>
           ))}
         </View>
@@ -103,10 +84,10 @@ export default function HomeSkeletons() {
         {/* <Animated.View style={[styles.totalBalanceSkeleton, { opacity }]} /> */}
 
         {/* 6. Wealth Coach Skeleton */}
-        <Animated.View style={[styles.coachSkeleton, { opacity }]} />
+        <Skeleton opacity={opacity} style={styles.coachSkeleton} />
 
         {/* 7. Activity Skeleton */}
-        <Animated.View style={[styles.activitySkeleton, { opacity }]} />
+        <Skeleton opacity={opacity} style={styles.activitySkeleton} />
       </View>
     </View>
   );
@@ -119,12 +100,10 @@ const styles = StyleSheet.create({
   greetingSkeleton: {
     height: 32,
     width: "60%",
-    backgroundColor: "#E5E7EB",
     borderRadius: 8,
     marginBottom: 6,
   },
   cardSkeleton: {
-    backgroundColor: "#E5E7EB",
     borderRadius: 24,
   },
   carouselSection: {
@@ -134,13 +113,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignSelf: "center",
     columnGap: 9,
-    marginTop: 18,
+    marginTop: 8,
   },
   dotSkeleton: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#E5E7EB",
   },
   quickActionsRow: {
     flexDirection: "row",
@@ -151,29 +129,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   quickActionBtn: {
-    backgroundColor: "#E5E7EB",
     borderRadius: 18,
   },
   quickActionLabel: {
     height: 14,
     width: 50,
-    backgroundColor: "#E5E7EB",
     borderRadius: 4,
     marginTop: 10,
   },
   totalBalanceSkeleton: {
     height: 145,
-    backgroundColor: "#E5E7EB",
     borderRadius: 24,
   },
   coachSkeleton: {
     height: 200,
-    backgroundColor: "#E5E7EB",
     borderRadius: 24,
   },
   activitySkeleton: {
     height: 180,
-    backgroundColor: "#E5E7EB",
     borderRadius: 24,
   },
 });

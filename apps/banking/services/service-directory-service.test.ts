@@ -53,6 +53,8 @@ describe("service search", () => {
     expect(searchServices("passbook").map((service) => service.id)).toContain("transaction-history");
     expect(searchServices("block card").map((service) => service.id)).toEqual(["lost-stolen-card"]);
     expect(searchServices("privacy").map((service) => service.id)).toContain("privacy-consent");
+    expect(searchServices("upi").map((service) => service.id)).toEqual(expect.arrayContaining(["transfer-money", "scan-qr"]));
+    expect(searchServices("deposit").map((service) => service.id)).toEqual(expect.arrayContaining(["fixed-deposits", "recurring-deposits"]));
     expect(new Set(searchServices("statement").map((service) => service.id)).size).toBe(searchServices("statement").length);
   });
 
