@@ -1,10 +1,11 @@
-import React, { useCallback } from "react";
-import { FlatList, StyleSheet, View } from "react-native";
+import React, { useMemo } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 import type { CoachRecommendation } from "@/types/wealth-coach";
 
+import { CoachSectionCard } from "./coach-section-card";
 import { RecommendationCard } from "./recommendation-card";
-import { SectionHeader } from "./section-header";
+import { coachColors } from "./tokens";
 
 type RecommendationsSectionProps = {
   recommendations: CoachRecommendation[];
@@ -17,40 +18,60 @@ export function RecommendationsSection({
   onViewAll,
   onRecommendationPress,
 }: RecommendationsSectionProps) {
-  const renderRecommendation = useCallback(
-    ({ item }: { item: CoachRecommendation }) => (
-      <RecommendationCard
-        recommendation={item}
-        onPress={() => onRecommendationPress(item.id)}
-      />
-    ),
-    [onRecommendationPress],
+  const eligibleRecommendations = useMemo(
+    () => recommendations
+      .filter((recommendation) => recommendation.isEligible)
+      .sort((left, right) => left.priority - right.priority),
+    [recommendations],
   );
 
   return (
-    <View>
-      <SectionHeader
-        title="Recommended for You"
+    <CoachSectionCard
+        title="Recommended for you"
+        titleStyle={styles.sectionTitle}
         actionLabel="See all"
         accessibilityLabel="View all recommendations"
         onActionPress={onViewAll}
-      />
-      <FlatList
-        horizontal
-        data={recommendations.filter((recommendation) => recommendation.isEligible)}
-        keyExtractor={(item) => item.id}
-        renderItem={renderRecommendation}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.content}
-      />
-    </View>
+    >
+      {eligibleRecommendations.length > 0 ? eligibleRecommendations.slice(0, 1).map((recommendation) => (
+        <RecommendationCard
+          key={recommendation.id}
+          recommendation={recommendation}
+          onPress={() => onRecommendationPress(recommendation.id)}
+        />
+      )) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>No recommendations right now</Text>
+          <Text style={styles.emptyDescription}>Your Coach will surface a next step when your financial context supports it.</Text>
+        </View>
+      )}
+    </CoachSectionCard>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingTop: 18,
-    paddingRight: 6,
-    paddingBottom: 6,
+  emptyState: {
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: coachColors.surfaceMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: coachColors.border,
+  },
+  sectionTitle: {
+    fontSize: 24,
+    lineHeight: 31,
+    fontWeight: "700",
+  },
+  emptyTitle: {
+    color: coachColors.textPrimary,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  emptyDescription: {
+    marginTop: 4,
+    color: coachColors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
   },
 });

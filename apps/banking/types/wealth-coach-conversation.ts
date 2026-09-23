@@ -26,6 +26,7 @@ export type CoachConversationContext = {
   period?: CoachPeriod;
   comparisonPeriod?: CoachPeriod;
   category?: TransactionCategory;
+  selectedTransactionId?: string;
   selectedGoalId?: string;
   goalScenario?: GoalScenario;
 };
@@ -38,7 +39,7 @@ export type CoachSourceReference = {
   cardId?: string;
   transactionId?: string;
   period?: CoachPeriod;
-  sourceEnvironment: "Demo data";
+  sourceEnvironment: string;
   capturedAt: string;
 };
 
@@ -79,20 +80,20 @@ export type CoachAnswerBlock =
       type: "categoryBreakdown";
       id: string;
       period: CoachPeriod;
-      items: Array<{
+      items: {
         category: string;
         label: string;
         amountMinorUnits: number;
         count: number;
         sourceReferenceId?: string;
-      }>;
+      }[];
     }
   | {
       type: "transactionList";
       id: string;
       title: string;
       transactionIds: string[];
-      items: Array<{
+      items: {
         id: string;
         accountId?: string;
         cardId?: string;
@@ -102,7 +103,7 @@ export type CoachAnswerBlock =
         direction: "credit" | "debit";
         status: string;
         sourceReferenceId: string;
-      }>;
+      }[];
     }
   | {
       type: "goalProgress";
@@ -152,7 +153,7 @@ export type CoachAnswer = {
   limitations: string[];
   suggestedFollowUps: string[];
   modelStatus: CoachModelStatus;
-  dataEnvironment: "Demo data";
+  dataEnvironment: string;
 };
 
 export type CoachModelStatus = "test-adapter" | "not-configured" | "server-provider";
@@ -215,7 +216,7 @@ export type SavedCoachGoal = {
   targetDate?: string;
   createdAt: string;
   sourceAnswerMessageId: string;
-  sourceEnvironment: "Demo data";
+  sourceEnvironment: string;
 };
 
 export type SavedCoachReport = {
@@ -226,5 +227,5 @@ export type SavedCoachReport = {
   answer: CoachAnswer;
   createdAt: string;
   sourceEnvironment: "Demo data";
-  demoIndicator: "Demo data";
+  demoIndicator: string;
 };

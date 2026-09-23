@@ -3,11 +3,11 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useUser } from "@clerk/expo";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,20 +16,13 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { getServiceDefinition, isMvpService, serviceCategories, serviceRegistry } from "@/data/services-registry";
 import {
-  getServiceCategory,
-  getServiceDefinition,
-  serviceCategories,
-  serviceRegistry,
-} from "@/data/services-registry";
-import {
-  clearRecentServices,
   getServiceAvailability,
   getServicePreferences,
   loadDirectoryResources,
-  moveFavourite,
   recordRecentService,
   resolveServiceNavigation,
   searchServices,
@@ -44,21 +37,29 @@ import type {
   ServicePreferences,
   ServiceResourceType,
 } from "@/types/services";
+import { appColors, appRadii, appSpacing, appTypography } from "@/components/theme/tokens";
+import { isRemoteDataEnabled } from "@/lib/env";
+import { useServiceCatalog } from "@/lib/api/hooks";
+import type { ApiService } from "@/lib/api/types";
+
+const PAGE_GUTTER = appSpacing.xl;
+const TABLET_CONTENT_MAX_WIDTH = 860;
 
 const colors = {
-  background: "#F7F8FA",
-  surface: "#FFFFFF",
-  text: "#111827",
-  secondary: "#6F7888",
-  muted: "#98A1AE",
-  green: "#007E5D",
-  greenDark: "#006647",
-  greenSoft: "#E9F5F2",
-  orange: "#C43E12",
-  orangeSoft: "#FFF2EA",
-  border: "#E8EBEF",
-  divider: "#EDF0F2",
-  danger: "#A62B32",
+  background: appColors.background,
+  surface: appColors.surface,
+  text: appColors.textPrimary,
+  secondary: appColors.textSecondary,
+  muted: appColors.textMuted,
+  surfaceMuted: appColors.surfaceMuted,
+  green: appColors.primary,
+  greenDark: appColors.primaryPressed,
+  greenSoft: appColors.primarySoft,
+  orange: appColors.orangeText,
+  orangeSoft: appColors.warningSoft,
+  border: appColors.border,
+  divider: appColors.divider,
+  danger: appColors.danger,
 };
 
 type ResourcePickerState = {
@@ -71,18 +72,52 @@ function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function tabBarHeight(bottomInset: number) {
-  return Platform.select({
-    ios: 72 + bottomInset,
-    android: 66 + Math.max(bottomInset, 10),
-    default: 76,
-  }) ?? 76;
+const serviceCategoryMap: Record<string, ServiceCategoryId> = {
+  accounts: "accounts-deposits",
+  payments: "payments-transfers",
+  cards: "cards",
+  wealth: "wealth-planning",
+  loans: "loans-insurance",
+  documents: "documents-requests",
+  security: "profile-security",
+  support: "help-support",
+};
+
+const serviceIdMap: Record<string, string> = {
+  "lost-card": "lost-stolen-card",
+  "wealth-coach": "ask-wealth-coach",
+  investments: "investments-overview",
+  profile: "my-profile",
+  privacy: "privacy-consent",
+  "branch-atm": "branch-atm-locator",
+};
+
+function localServiceId(slug: string): string {
+  return serviceIdMap[slug] ?? slug;
+}
+
+function hydrateApiService(service: ApiService): ServiceDefinition | undefined {
+  const local = getServiceDefinition(localServiceId(service.slug));
+  const categoryId = serviceCategoryMap[service.category];
+  if (!local || !categoryId) return undefined;
+  return {
+    ...local,
+    title: service.title,
+    description: service.description,
+    categoryId,
+    aliases: service.searchTerms,
+    sortOrder: service.displayOrder,
+  };
 }
 
 function availabilityFor(
   service: ServiceDefinition,
   resources: Awaited<ReturnType<typeof loadDirectoryResources>> | null,
 ): ServiceAvailability {
+  if (service.destination.kind === "information") {
+    return { state: "information", label: "Information", reason: service.availabilityDescription };
+  }
+  if (!service.requiresResource && !resources) return { state: "available", label: "Available" };
   if (!resources) return { state: "checking", label: "Checking availability" };
   return getServiceAvailability(service, resources);
 }
@@ -92,35 +127,82 @@ export function ServiceDirectoryScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { user } = useUser();
+  const remoteCatalog = useServiceCatalog();
   const { focusServiceId: rawFocusServiceId } = useLocalSearchParams<{ focusServiceId?: string | string[] }>();
   const customerId = user?.id ?? "demo-customer-a";
   const focusServiceId = firstParam(rawFocusServiceId);
   const scrollRef = useRef<ScrollView>(null);
   const [query, setQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategoryId | "all">("all");
   const [preferences, setPreferences] = useState<ServicePreferences>({ version: 1, favouriteServiceIds: [], recentServices: [] });
   const [resources, setResources] = useState<Awaited<ReturnType<typeof loadDirectoryResources>> | null>(null);
-  const [loadState, setLoadState] = useState<"loading" | "ready">("loading");
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [picker, setPicker] = useState<ResourcePickerState | null>(null);
-  const [isEditingFavourites, setIsEditingFavourites] = useState(false);
   const [pendingFavouriteId, setPendingFavouriteId] = useState<string | null>(null);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
 
+  const remoteServices = useMemo(
+    () => remoteCatalog.data?.items.flatMap((service) => {
+      const hydrated = hydrateApiService(service);
+      return hydrated && isMvpService(hydrated) ? [hydrated] : [];
+    }) ?? [],
+    [remoteCatalog.data],
+  );
+  // A live catalogue response is authoritative. An empty or failed response
+  // must not silently repopulate the directory from local fixtures.
+  const catalogueServices = isRemoteDataEnabled
+    ? remoteServices
+    : serviceRegistry.filter(isMvpService);
+  const searchDirectoryServices = useCallback(
+    (searchQuery: string, categoryId: ServiceCategoryId | "all") => searchServices(searchQuery, categoryId, catalogueServices),
+    [catalogueServices],
+  );
+
   const loadDirectory = useCallback(async () => {
+    if (isRemoteDataEnabled) return;
     setLoadState("loading");
-    const [nextPreferences, nextResources] = await Promise.all([
-      getServicePreferences({ customerId }),
-      loadDirectoryResources(customerId),
-    ]);
-    setPreferences(nextPreferences);
-    setResources(nextResources);
-    setLoadState("ready");
+    setLoadError(null);
+    try {
+      const [nextPreferences, nextResources] = await Promise.all([
+        getServicePreferences({ customerId }),
+        loadDirectoryResources(customerId),
+      ]);
+      setPreferences(nextPreferences);
+      setResources(nextResources);
+      setLoadState("ready");
+    } catch {
+      setLoadError("Unable to load services. Please try again.");
+      setLoadState("error");
+    }
   }, [customerId]);
 
   useEffect(() => {
     void loadDirectory();
   }, [loadDirectory]);
+
+  useEffect(() => {
+    if (!isRemoteDataEnabled) return;
+    if (remoteCatalog.isLoading) {
+      setLoadState("loading");
+      return;
+    }
+    if (remoteCatalog.error) {
+      setLoadError("Unable to load services from the banking API. Please try again.");
+      setLoadState("error");
+      return;
+    }
+    if (remoteCatalog.data) {
+      setPreferences({
+        version: 1,
+        favouriteServiceIds: remoteServices.filter((service) => remoteCatalog.data?.items.find((item) => localServiceId(item.slug) === service.id)?.isFavorite).map((service) => service.id),
+        recentServices: [],
+      });
+      setLoadState("ready");
+      void loadDirectoryResources(customerId).then(setResources).catch(() => setResources(null));
+    }
+  }, [customerId, loadDirectory, remoteCatalog.data, remoteCatalog.error, remoteCatalog.isLoading, remoteServices]);
 
   useFocusEffect(
     useCallback(() => {
@@ -138,36 +220,42 @@ export function ServiceDirectoryScreen() {
 
   const queryActive = query.trim().length > 0;
   const filteredServices = useMemo(
-    () => searchServices(query, selectedCategory),
-    [query, selectedCategory],
+    () => searchDirectoryServices(query, selectedCategory),
+    [query, searchDirectoryServices, selectedCategory],
   );
   const allQueryMatches = useMemo(
-    () => queryActive ? searchServices(query, "all") : [],
-    [query, queryActive],
+    () => queryActive ? searchDirectoryServices(query, "all") : [],
+    [query, queryActive, searchDirectoryServices],
   );
-  const categoryDefinitions = serviceCategories.filter((category) => serviceRegistry.some((service) => service.categoryId === category.id));
+  const categoryDefinitions = serviceCategories.filter((category) => catalogueServices.some((service) => service.categoryId === category.id));
   const favouriteServices = preferences.favouriteServiceIds
-    .map((id) => getServiceDefinition(id))
+    .map((id) => catalogueServices.find((service) => service.id === id))
     .filter((service): service is ServiceDefinition => Boolean(service))
-    .filter((service) => selectedCategory === "all" || service.categoryId === selectedCategory);
-  const recentServices = preferences.recentServices
-    .map((item) => getServiceDefinition(item.serviceId))
-    .filter((service): service is ServiceDefinition => Boolean(service))
-    .filter((service) => selectedCategory === "all" || service.categoryId === selectedCategory);
+    .filter((service) => service.favouriteAllowed);
+  const quickAccessServices = useMemo(() => {
+    const defaults = ["transfer-money", "scan-qr", "my-cards", "account-statements"]
+      .map((id) => catalogueServices.find((service) => service.id === id))
+      .filter((service): service is ServiceDefinition => Boolean(service));
+    return [...favouriteServices, ...defaults]
+      .filter((service, index, services) => services.findIndex((item) => item.id === service.id) === index)
+      .slice(0, 4);
+  }, [catalogueServices, favouriteServices]);
   const groupedServices = useMemo(() => {
     if (queryActive) return [{ title: "Search results", services: filteredServices }];
     return categoryDefinitions
       .filter((category) => selectedCategory === "all" || category.id === selectedCategory)
       .map((category) => ({
         title: category.title,
-        services: searchServices("", category.id),
+        services: searchDirectoryServices("", category.id),
       }))
       .filter((section) => section.services.length > 0);
-  }, [categoryDefinitions, filteredServices, queryActive, selectedCategory]);
+  }, [categoryDefinitions, filteredServices, queryActive, searchDirectoryServices, selectedCategory]);
 
-  const horizontalPadding = width < 375 ? 16 : 20;
-  const contentWidth = Math.min(width - horizontalPadding * 2, 860);
-  const compactColumns = width >= 360;
+  const contentFrame = {
+    maxWidth: width >= 768 ? TABLET_CONTENT_MAX_WIDTH : undefined,
+    paddingHorizontal: PAGE_GUTTER,
+  };
+  const quickAccessColumns = width < 360 ? 2 : 4;
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
@@ -183,7 +271,7 @@ export function ServiceDirectoryScreen() {
       const nextPreferences = await recordRecentService(service.id, { customerId });
       setPreferences(nextPreferences);
     } catch {
-      setPreferenceError("The service opened, but it could not be added to Recently opened.");
+      setPreferenceError("The service opened, but recent service activity could not be saved.");
     }
   }, [customerId, router]);
 
@@ -227,87 +315,70 @@ export function ServiceDirectoryScreen() {
     }
   };
 
-  const clearRecents = async () => {
-    try {
-      setPreferences(await clearRecentServices({ customerId }));
-    } catch {
-      setPreferenceError("Recently opened services could not be cleared. Try again.");
-    }
-  };
-
-  const moveServiceFavourite = async (serviceId: string, direction: "earlier" | "later") => {
-    try {
-      setPreferences(await moveFavourite(serviceId, direction, { customerId }));
-    } catch {
-      setPreferenceError("Favourite order could not be saved. Try again.");
-    }
-  };
-
-  const selectedCategoryLabel = selectedCategory === "all" ? "All services" : getServiceCategory(selectedCategory).title;
-
   return (
-    <View style={styles.screen}>
-      <ScrollView
-        ref={scrollRef}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 30 + tabBarHeight(insets.bottom) }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={[styles.content, { maxWidth: contentWidth, paddingHorizontal: horizontalPadding }]}>
+    <SafeAreaView style={styles.screen} edges={["top"]}>
+      <StatusBar style="dark" />
+      <View style={styles.fixedHeader}>
+        <View style={[styles.content, contentFrame]}>
           <View style={styles.headerRow}>
             <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={goBack} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
               <Ionicons name="chevron-back" size={23} color={colors.text} />
               <Text style={styles.backText}>Back</Text>
             </Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="Services help" onPress={() => void openService(getServiceDefinition("help-center")!)} style={({ pressed }) => [styles.helpButton, pressed && styles.pressed]}>
-              <Ionicons name="help-circle-outline" size={21} color={colors.greenDark} />
+              <Ionicons name="help-circle-outline" size={20} color={colors.greenDark} />
               <Text style={styles.helpText}>Help</Text>
             </Pressable>
           </View>
+        </View>
+      </View>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.flex}
+        contentInsetAdjustmentBehavior="never"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: appSpacing.xxl + insets.bottom }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={[styles.content, contentFrame]}>
+          <Text accessibilityRole="header" style={styles.title}>All Services</Text>
+          <Text style={styles.subtitle}>Everything you need to manage your banking.</Text>
 
-          <View style={styles.titleRow}>
-            <View style={styles.titleColumn}>
-              <Text accessibilityRole="header" style={styles.title}>All Services</Text>
-              <Text style={styles.subtitle}>Find banking tools, account services, and financial guidance.</Text>
+          {loadState === "loading" ? (
+            <View accessible accessibilityLabel="Loading service search" style={[styles.searchContainer, styles.searchSkeleton]}>
+              <View style={styles.searchSkeletonIcon} />
+              <View style={styles.searchSkeletonLine} />
             </View>
-            {loadState === "ready" ? <Text style={styles.catalogueCount}>{serviceRegistry.length} services</Text> : null}
-          </View>
+          ) : (
+            <View style={[styles.searchContainer, searchFocused && styles.searchContainerFocused]}>
+              <Ionicons name="search-outline" size={21} color={colors.secondary} />
+              <TextInput
+                accessibilityLabel="Search services"
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="never"
+                onChangeText={setQuery}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
+                placeholder="Search services"
+                placeholderTextColor={colors.muted}
+                returnKeyType="search"
+                style={styles.searchInput}
+                value={query}
+              />
+              {query.length > 0 ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="Clear service search" hitSlop={8} onPress={() => setQuery("")} style={styles.clearSearchButton}>
+                  <Ionicons name="close-circle" size={20} color={colors.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+          )}
 
-          <View style={styles.searchContainer}>
-            <Ionicons name="search-outline" size={21} color={colors.secondary} />
-            <TextInput
-              accessibilityLabel="Search services"
-              autoCapitalize="none"
-              autoCorrect={false}
-              clearButtonMode="never"
-              onChangeText={setQuery}
-              placeholder="Try ‘statement’, ‘transfer’, or ‘card limits’"
-              placeholderTextColor={colors.muted}
-              returnKeyType="search"
-              style={styles.searchInput}
-              value={query}
-            />
-            {query.length > 0 ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Clear service search" hitSlop={8} onPress={() => setQuery("")} style={styles.clearSearchButton}>
-                <Ionicons name="close-circle" size={20} color={colors.muted} />
-              </Pressable>
-            ) : null}
-          </View>
+          <SectionHeading title="Quick access" />
+          {loadState === "loading" ? <QuickAccessSkeleton columns={quickAccessColumns} /> : <QuickAccess services={quickAccessServices} columns={quickAccessColumns} onOpen={(service) => void openService(service)} />}
 
-          <View style={styles.categoryHeader}>
-            <Text style={styles.controlLabel}>Browse by category</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Choose service category" accessibilityState={{ expanded: isCategoryModalOpen }} onPress={() => setIsCategoryModalOpen(true)} style={({ pressed }) => [styles.chooseCategoryButton, pressed && styles.pressed]}>
-              <Ionicons name="list-outline" size={17} color={colors.greenDark} />
-              <Text style={styles.chooseCategoryText}>{selectedCategoryLabel}</Text>
-              <Ionicons name="chevron-down" size={17} color={colors.greenDark} />
-            </Pressable>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-            <CategoryChip label="All" selected={selectedCategory === "all"} onPress={() => setSelectedCategory("all")} />
-            {categoryDefinitions.map((category) => (
-              <CategoryChip key={category.id} label={category.shortTitle} selected={selectedCategory === category.id} onPress={() => setSelectedCategory(category.id)} />
-            ))}
-          </ScrollView>
+          <SectionHeading title="Categories" />
+          {loadState === "loading" ? <CategorySkeleton /> : <CategoryFilter categories={categoryDefinitions} selectedCategory={selectedCategory} onSelect={setSelectedCategory} />}
 
           {preferenceError ? (
             <View style={styles.preferenceError}>
@@ -328,104 +399,9 @@ export function ServiceDirectoryScreen() {
             </View>
           ) : null}
 
-          {!queryActive && favouriteServices.length > 0 ? (
-            <View style={styles.section}>
-              <SectionHeading title="Favourites" actionLabel={isEditingFavourites ? "Done" : "Edit"} onAction={() => setIsEditingFavourites((editing) => !editing)} />
-              <View style={[styles.favouritesGrid, !compactColumns && styles.favouritesSingleColumn]}>
-                {favouriteServices.map((service, index) => (
-                  <FavouriteTile
-                    key={service.id}
-                    service={service}
-                    availability={availabilityFor(service, resources)}
-                    isEditing={isEditingFavourites}
-                    isFirst={index === 0}
-                    isLast={index === favouriteServices.length - 1}
-                    isPending={pendingFavouriteId === service.id}
-                    onPress={() => void openService(service)}
-                    onToggleFavourite={() => void toggleServiceFavourite(service)}
-                    onMoveEarlier={() => void moveServiceFavourite(service.id, "earlier")}
-                    onMoveLater={() => void moveServiceFavourite(service.id, "later")}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : !queryActive ? (
-            <View style={styles.emptyFavourites}>
-              <Ionicons name="star-outline" size={22} color={colors.green} />
-              <View style={styles.emptyFavouritesCopy}>
-                <Text style={styles.emptyTitle}>Keep your most-used services here.</Text>
-                <Text style={styles.emptyDescription}>Choose favourites from the catalogue for quick access.</Text>
-              </View>
-            </View>
-          ) : null}
-
-          {!queryActive && recentServices.length > 0 ? (
-            <View style={styles.section}>
-              <SectionHeading title="Recently opened" actionLabel="Clear" onAction={() => void clearRecents()} />
-              <View style={styles.surfaceCard}>
-                {recentServices.map((service, index) => (
-                  <ServiceRow
-                    key={service.id}
-                    service={service}
-                    availability={availabilityFor(service, resources)}
-                    isFavourite={preferences.favouriteServiceIds.includes(service.id)}
-                    isPendingFavourite={pendingFavouriteId === service.id}
-                    showDivider={index < recentServices.length - 1}
-                    onPress={() => void openService(service)}
-                    onToggleFavourite={() => void toggleServiceFavourite(service)}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          <View style={[styles.catalogueSection, queryActive && styles.catalogueSearchSection]}>
-            {groupedServices.map((section) => (
-              <View key={section.title} style={styles.section}>
-                <Text accessibilityRole="header" style={styles.sectionTitle}>{section.title}</Text>
-                <View style={styles.surfaceCard}>
-                  {section.services.map((service, index) => (
-                    <ServiceRow
-                      key={service.id}
-                      service={service}
-                      availability={availabilityFor(service, resources)}
-                      isFavourite={preferences.favouriteServiceIds.includes(service.id)}
-                      isPendingFavourite={pendingFavouriteId === service.id}
-                      showDivider={index < section.services.length - 1}
-                      onPress={() => void openService(service)}
-                      onToggleFavourite={() => void toggleServiceFavourite(service)}
-                    />
-                  ))}
-                </View>
-              </View>
-            ))}
-            {queryActive && filteredServices.length === 0 ? (
-              <View style={styles.noResultsCard}>
-                <Ionicons name="search-outline" size={29} color={colors.muted} />
-                <Text style={styles.noResultsTitle}>No services found</Text>
-                <Text style={styles.noResultsDescription}>Try “statement”, “transfer”, “card limits”, or another banking task.</Text>
-                <Pressable accessibilityRole="button" onPress={() => { setQuery(""); setSelectedCategory("all"); }} style={styles.secondaryButton}>
-                  <Text style={styles.secondaryButtonText}>Clear search</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
-
-          <View style={styles.helpCard}>
-            <View style={styles.helpIcon}><Ionicons name="help-circle-outline" size={24} color={colors.green} /></View>
-            <View style={styles.helpCopy}><Text style={styles.helpTitle}>Need help finding a task?</Text><Text style={styles.helpDescription}>Search by what you want to do, or open Help center for the current support options.</Text></View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Open Help center" onPress={() => void openService(getServiceDefinition("help-center")!)} style={styles.helpLink}><Text style={styles.helpLinkText}>Help</Text><Ionicons name="arrow-forward" size={17} color={colors.greenDark} /></Pressable>
-          </View>
+          {loadState === "loading" ? <ServiceCatalogueSkeleton /> : loadState === "error" ? <ServiceLoadError message={loadError ?? "Unable to load services."} onRetry={() => void loadDirectory()} /> : <View style={styles.catalogueSection}>{groupedServices.map((section) => <ServiceSection key={section.title} title={section.title} services={section.services} resources={resources} favouriteIds={preferences.favouriteServiceIds} pendingFavouriteId={pendingFavouriteId} onOpen={(service) => void openService(service)} onToggleFavourite={(service) => void toggleServiceFavourite(service)} />)}{queryActive && filteredServices.length === 0 ? <SearchEmptyState onClear={() => { setQuery(""); setSelectedCategory("all"); }} /> : null}</View>}
         </View>
       </ScrollView>
-
-      <CategoryModal
-        visible={isCategoryModalOpen}
-        selectedCategory={selectedCategory}
-        categories={categoryDefinitions}
-        onClose={() => setIsCategoryModalOpen(false)}
-        onSelect={(category) => { setSelectedCategory(category); setIsCategoryModalOpen(false); }}
-      />
       <ResourcePickerModal
         picker={picker}
         accounts={resources?.accounts ?? []}
@@ -438,7 +414,7 @@ export function ServiceDirectoryScreen() {
           void navigateToService(picker.service, context);
         }}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -450,19 +426,82 @@ function CategoryChip({ label, selected, onPress }: { label: string; selected: b
   );
 }
 
-function SectionHeading({ title, actionLabel, onAction }: { title: string; actionLabel: string; onAction: () => void }) {
+function CategoryFilter({ categories, selectedCategory, onSelect }: { categories: { id: ServiceCategoryId; shortTitle: string }[]; selectedCategory: ServiceCategoryId | "all"; onSelect: (category: ServiceCategoryId | "all") => void }) {
   return (
-    <View style={styles.sectionHeading}>
-      <Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>
-      <Pressable accessibilityRole="button" onPress={onAction} style={({ pressed }) => [styles.sectionAction, pressed && styles.pressed]}><Text style={styles.sectionActionText}>{actionLabel}</Text></Pressable>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScrollViewport} contentContainerStyle={styles.categoryScroll}>
+      <CategoryChip label="All" selected={selectedCategory === "all"} onPress={() => onSelect("all")} />
+      {categories.map((category) => <CategoryChip key={category.id} label={category.shortTitle} selected={selectedCategory === category.id} onPress={() => onSelect(category.id)} />)}
+    </ScrollView>
+  );
+}
+
+function QuickAccess({ services, columns, onOpen }: { services: ServiceDefinition[]; columns: number; onOpen: (service: ServiceDefinition) => void }) {
+  return (
+    <View style={styles.quickAccessGrid}>
+      {services.map((service) => (
+        <Pressable
+          key={service.id}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${service.title}`}
+          onPress={() => onOpen(service)}
+          style={({ pressed }) => [styles.quickAccessItem, { width: columns === 4 ? "23.5%" : "48%" }, pressed && styles.pressed]}
+        >
+          <ServiceIcon service={service} />
+          <Text numberOfLines={1} style={styles.quickAccessLabel}>{quickAccessLabel(service)}</Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
 
-function AvailabilityBadge({ availability }: { availability: ServiceAvailability }) {
-  const isInformation = availability.state === "information";
-  const isUnavailable = availability.state === "unavailable";
-  return <Text style={[styles.availabilityBadge, isInformation && styles.informationBadge, isUnavailable && styles.unavailableBadge]}>{availability.label}</Text>;
+function quickAccessLabel(service: ServiceDefinition): string {
+  switch (service.id) {
+    case "transfer-money": return "Transfer";
+    case "scan-qr": return "Scan QR";
+    case "my-cards": return "Cards";
+    case "account-statements": return "Statements";
+    default: return service.title;
+  }
+}
+
+function QuickAccessSkeleton({ columns }: { columns: number }) {
+  return <View style={styles.quickAccessGrid}>{[0, 1, 2, 3].map((item) => <View key={item} style={[styles.quickAccessItem, styles.skeletonTile, { width: columns === 4 ? "23.5%" : "48%" }]}><View style={styles.skeletonQuickIcon} /><View style={styles.skeletonQuickLabel} /></View>)}</View>;
+}
+
+function CategorySkeleton() {
+  return <View style={styles.categorySkeleton}>{[0, 1, 2, 3, 4].map((item) => <View key={item} style={[styles.skeletonChip, item === 0 && styles.skeletonChipWide]} />)}</View>;
+}
+
+function ServiceCatalogueSkeleton() {
+  return <View style={styles.catalogueSection}>{serviceCategories.slice(0, 4).map((category) => <View key={category.id} style={styles.section}><View style={styles.skeletonSectionHeading} /><View style={styles.surfaceCard}>{[0, 1, 2].map((item) => <View key={item} style={[styles.skeletonServiceRow, item > 0 && styles.skeletonServiceDivider]}><View style={styles.skeletonServiceIcon} /><View style={styles.skeletonServiceCopy}><View style={styles.skeletonServiceTitle} /><View style={styles.skeletonServiceDescription} /></View><View style={styles.skeletonChevron} /></View>)}</View></View>)}</View>;
+}
+
+function ServiceSection({ title, services, resources, favouriteIds, pendingFavouriteId, onOpen, onToggleFavourite }: { title: string; services: ServiceDefinition[]; resources: Awaited<ReturnType<typeof loadDirectoryResources>> | null; favouriteIds: string[]; pendingFavouriteId: string | null; onOpen: (service: ServiceDefinition) => void; onToggleFavourite: (service: ServiceDefinition) => void }) {
+  return (
+    <View style={styles.section}>
+      <SectionHeading title={title} />
+      <View style={styles.surfaceCard}>
+        {services.map((service, index) => <ServiceRow key={service.id} service={service} availability={availabilityFor(service, resources)} isFavourite={favouriteIds.includes(service.id)} isPendingFavourite={pendingFavouriteId === service.id} showDivider={index < services.length - 1} onPress={() => onOpen(service)} onToggleFavourite={() => onToggleFavourite(service)} />)}
+      </View>
+    </View>
+  );
+}
+
+function ServiceLoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return <View style={styles.loadError} accessibilityRole="alert"><Ionicons name="alert-circle-outline" size={22} color={colors.danger} /><View style={styles.loadErrorCopy}><Text style={styles.loadErrorTitle}>Unable to load services</Text><Text style={styles.loadErrorDescription}>{message}</Text></View><Pressable accessibilityRole="button" onPress={onRetry} style={styles.retryButton}><Text style={styles.retryText}>Retry</Text></Pressable></View>;
+}
+
+function SearchEmptyState({ onClear }: { onClear: () => void }) {
+  return <View style={styles.noResultsCard} accessibilityLiveRegion="polite"><Ionicons name="search-outline" size={23} color={colors.muted} /><View style={styles.noResultsCopy}><Text style={styles.noResultsTitle}>No services found</Text><Text style={styles.noResultsDescription}>Try another search or browse by category.</Text></View><Pressable accessibilityRole="button" onPress={onClear} style={styles.clearResultsButton}><Text style={styles.clearResultsText}>Clear</Text></Pressable></View>;
+}
+
+function SectionHeading({ title, actionLabel, onAction }: { title: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <View style={styles.sectionHeading}>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>
+      {actionLabel && onAction ? <Pressable accessibilityRole="button" onPress={onAction} style={({ pressed }) => [styles.sectionAction, pressed && styles.pressed]}><Text style={styles.sectionActionText}>{actionLabel}</Text></Pressable> : null}
+    </View>
+  );
 }
 
 function ServiceIcon({ service }: { service: ServiceDefinition }) {
@@ -472,48 +511,32 @@ function ServiceIcon({ service }: { service: ServiceDefinition }) {
 }
 
 function FavouriteButton({ service, isFavourite, isPending, onPress }: { service: ServiceDefinition; isFavourite: boolean; isPending: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${isFavourite ? "Remove" : "Add"} ${service.title} ${isFavourite ? "from" : "to"} favourites`} accessibilityState={{ busy: isPending, selected: isFavourite }} disabled={isPending} hitSlop={8} onPress={onPress} style={({ pressed }) => [styles.favouriteButton, pressed && styles.pressed]}><Ionicons name={isFavourite ? "star" : "star-outline"} size={21} color={isFavourite ? colors.green : colors.muted} /></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${isFavourite ? "Remove" : "Add"} ${service.title} ${isFavourite ? "from" : "to"} favourites`} accessibilityState={{ busy: isPending, selected: isFavourite }} disabled={isPending} hitSlop={8} onPress={onPress} style={({ pressed }) => [styles.favouriteButton, pressed && styles.pressed]}><Ionicons name={isFavourite ? "star" : "star-outline"} size={18} color={isFavourite ? colors.green : colors.muted} /></Pressable>;
 }
 
 function ServiceRow({ service, availability, isFavourite, isPendingFavourite, showDivider, onPress, onToggleFavourite }: { service: ServiceDefinition; availability: ServiceAvailability; isFavourite: boolean; isPendingFavourite: boolean; showDivider: boolean; onPress: () => void; onToggleFavourite: () => void }) {
+  const availabilityLabel = availability.state === "unavailable" ? "Unavailable" : availability.state === "checking" ? "Checking" : null;
   return (
     <View>
       <View style={styles.serviceRow}>
         <Pressable accessibilityRole="button" accessibilityLabel={`Open ${service.title}`} accessibilityHint={service.description} onPress={onPress} style={({ pressed }) => [styles.serviceRowMain, pressed && styles.pressed]}>
           <ServiceIcon service={service} />
           <View style={styles.serviceRowCopy}>
-            <Text style={styles.serviceRowTitle}>{service.title}</Text>
-            <Text style={styles.serviceRowDescription}>{service.description}</Text>
-            <View style={styles.badgeRow}><AvailabilityBadge availability={availability} />{service.environment === "demo" ? <Text style={styles.environmentText}>Demo</Text> : null}</View>
+            <Text numberOfLines={1} style={styles.serviceRowTitle}>{service.title}</Text>
+            <Text numberOfLines={2} style={styles.serviceRowDescription}>{service.description}</Text>
+            {availabilityLabel ? <Text style={[styles.serviceRowStatus, availability.state === "unavailable" && styles.serviceRowStatusUnavailable]}>{availabilityLabel}</Text> : null}
           </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
         </Pressable>
-        {service.favouriteAllowed ? <FavouriteButton service={service} isFavourite={isFavourite} isPending={isPendingFavourite} onPress={onToggleFavourite} /> : null}
+        <View style={styles.trailing}>
+          {service.favouriteAllowed ? <FavouriteButton service={service} isFavourite={isFavourite} isPending={isPendingFavourite} onPress={onToggleFavourite} /> : null}
+          <Pressable accessibilityRole="button" accessibilityLabel={`Open ${service.title}`} onPress={onPress} style={({ pressed }) => [styles.chevronButton, pressed && styles.pressed]}>
+            <Ionicons name="chevron-forward" size={19} color={colors.muted} />
+          </Pressable>
+        </View>
       </View>
       {showDivider ? <View style={styles.divider} /> : null}
     </View>
   );
-}
-
-function FavouriteTile({ service, availability, isEditing, isFirst, isLast, isPending, onPress, onToggleFavourite, onMoveEarlier, onMoveLater }: { service: ServiceDefinition; availability: ServiceAvailability; isEditing: boolean; isFirst: boolean; isLast: boolean; isPending: boolean; onPress: () => void; onToggleFavourite: () => void; onMoveEarlier: () => void; onMoveLater: () => void }) {
-  return (
-    <View style={styles.favouriteTile}>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Open favourite ${service.title}`} onPress={onPress} style={({ pressed }) => [styles.favouriteTileMain, pressed && styles.pressed]}>
-        <ServiceIcon service={service} />
-        <Text style={styles.favouriteTileTitle}>{service.title}</Text>
-        <AvailabilityBadge availability={availability} />
-      </Pressable>
-      <View style={styles.favouriteStar}><FavouriteButton service={service} isFavourite isPending={isPending} onPress={onToggleFavourite} /></View>
-      {isEditing ? <View style={styles.reorderControls}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Move ${service.title} earlier`} disabled={isFirst} onPress={onMoveEarlier} style={[styles.reorderButton, isFirst && styles.disabled]}><Ionicons name="chevron-up" size={17} color={isFirst ? colors.muted : colors.greenDark} /></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Move ${service.title} later`} disabled={isLast} onPress={onMoveLater} style={[styles.reorderButton, isLast && styles.disabled]}><Ionicons name="chevron-down" size={17} color={isLast ? colors.muted : colors.greenDark} /></Pressable>
-      </View> : null}
-    </View>
-  );
-}
-
-function CategoryModal({ visible, selectedCategory, categories, onClose, onSelect }: { visible: boolean; selectedCategory: ServiceCategoryId | "all"; categories: { id: ServiceCategoryId; title: string }[]; onClose: () => void; onSelect: (category: ServiceCategoryId | "all") => void }) {
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Choose category</Text><Pressable accessibilityRole="button" accessibilityLabel="Close category chooser" onPress={onClose}><Ionicons name="close" size={23} color={colors.text} /></Pressable></View><Pressable accessibilityRole="button" accessibilityState={{ selected: selectedCategory === "all" }} onPress={() => onSelect("all")} style={styles.modalOption}><Text style={styles.modalOptionText}>All services</Text>{selectedCategory === "all" ? <Ionicons name="checkmark" size={20} color={colors.green} /> : null}</Pressable>{categories.map((category) => <Pressable key={category.id} accessibilityRole="button" accessibilityState={{ selected: selectedCategory === category.id }} onPress={() => onSelect(category.id)} style={styles.modalOption}><Text style={styles.modalOptionText}>{category.title}</Text>{selectedCategory === category.id ? <Ionicons name="checkmark" size={20} color={colors.green} /> : null}</Pressable>)}</View></View></Modal>;
 }
 
 function ResourcePickerModal({ picker, accounts, cards, onClose, onSelect }: { picker: ResourcePickerState | null; accounts: BankAccount[]; cards: CardRecord[]; onClose: () => void; onSelect: (resourceId: string) => void }) {
@@ -526,25 +549,29 @@ function ResourcePickerModal({ picker, accounts, cards, onClose, onSelect }: { p
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { width: "100%", alignSelf: "center", paddingTop: 15 },
+  flex: { flex: 1 },
+  fixedHeader: { backgroundColor: colors.background },
+  content: { width: "100%", alignSelf: "center" },
   headerRow: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   backButton: { minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center" },
   backText: { marginLeft: 2, color: colors.text, fontSize: 16, fontWeight: "600" },
   helpButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 8 },
   helpText: { color: colors.greenDark, fontSize: 14, fontWeight: "700" },
-  titleRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 12, marginTop: 13 },
-  titleColumn: { flex: 1, minWidth: 0 },
-  title: { color: colors.text, fontSize: 30, lineHeight: 38, fontWeight: "700" },
-  subtitle: { marginTop: 5, color: colors.secondary, fontSize: 15, lineHeight: 22 },
-  catalogueCount: { paddingBottom: 5, color: colors.muted, fontSize: 12, fontWeight: "700" },
-  searchContainer: { minHeight: 54, flexDirection: "row", alignItems: "center", marginTop: 22, paddingHorizontal: 15, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  title: { ...appTypography.pageTitle, marginTop: 28, color: colors.text },
+  subtitle: { ...appTypography.supporting, marginTop: 8, color: colors.secondary, fontSize: 15, lineHeight: 22 },
+  searchContainer: { width: "100%", minHeight: 54, flexDirection: "row", alignItems: "center", marginTop: 24, paddingHorizontal: 15, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  searchSkeleton: { backgroundColor: colors.surfaceMuted },
+  searchSkeletonIcon: { width: 21, height: 21, borderRadius: 11, backgroundColor: "#E7ECEE" },
+  searchSkeletonLine: { flex: 1, height: 12, marginLeft: 10, borderRadius: 6, backgroundColor: "#E7ECEE" },
+  searchContainerFocused: { borderColor: colors.green },
   searchInput: { flex: 1, minWidth: 0, marginLeft: 10, paddingVertical: 13, color: colors.text, fontSize: 15 },
   clearSearchButton: { minWidth: 32, minHeight: 44, alignItems: "center", justifyContent: "center" },
-  categoryHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 22 },
-  controlLabel: { color: colors.text, fontSize: 16, fontWeight: "700" },
-  chooseCategoryButton: { minHeight: 40, maxWidth: "60%", flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, borderRadius: 12, backgroundColor: colors.greenSoft },
-  chooseCategoryText: { flexShrink: 1, color: colors.greenDark, fontSize: 12, fontWeight: "700" },
-  categoryScroll: { gap: 8, paddingTop: 11, paddingBottom: 2 },
+  quickAccessGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 8 },
+  quickAccessItem: { minHeight: 88, alignItems: "center", justifyContent: "center", paddingHorizontal: 5, paddingVertical: 9, borderRadius: 16, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  quickAccessLabel: { maxWidth: "100%", marginTop: 6, color: colors.text, fontSize: 12, lineHeight: 16, fontWeight: "700", textAlign: "center" },
+  categorySkeleton: { flexDirection: "row", columnGap: 8, overflow: "hidden", paddingTop: 4, paddingBottom: 2 },
+  categoryScrollViewport: { marginHorizontal: -PAGE_GUTTER },
+  categoryScroll: { columnGap: 8, paddingHorizontal: PAGE_GUTTER, paddingBottom: 2 },
   categoryChip: { minHeight: 42, alignItems: "center", justifyContent: "center", paddingHorizontal: 15, borderRadius: 22, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   categoryChipSelected: { backgroundColor: colors.green, borderColor: colors.green },
   categoryChipText: { color: colors.secondary, fontSize: 13, fontWeight: "700" },
@@ -555,58 +582,57 @@ const styles = StyleSheet.create({
   resultCount: { color: colors.secondary, fontSize: 13, fontWeight: "700" },
   searchAllButton: { minHeight: 40, justifyContent: "center", paddingHorizontal: 9 },
   searchAllText: { color: colors.greenDark, fontSize: 13, fontWeight: "700" },
-  section: { marginTop: 25 },
-  catalogueSection: { marginTop: 1 },
-  catalogueSearchSection: { marginTop: 11 },
+  section: { width: "100%", marginTop: appSpacing.huge },
+  catalogueSection: { width: "100%", marginTop: 0 },
   sectionHeading: { minHeight: 34, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
-  sectionTitle: { color: colors.text, fontSize: 20, lineHeight: 27, fontWeight: "700" },
+  sectionTitle: { ...appTypography.cardTitle, color: colors.text, fontSize: 20, lineHeight: 27, fontWeight: "700" },
   sectionAction: { minHeight: 40, justifyContent: "center", paddingHorizontal: 8 },
   sectionActionText: { color: colors.greenDark, fontSize: 13, fontWeight: "700" },
-  surfaceCard: { overflow: "hidden", borderRadius: 19, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, shadowColor: colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 10, elevation: 2 },
-  serviceRow: { minHeight: 105, flexDirection: "row", alignItems: "center", paddingLeft: 14, paddingRight: 8, paddingVertical: 10 },
-  serviceRowMain: { flex: 1, minWidth: 0, minHeight: 76, flexDirection: "row", alignItems: "center", paddingRight: 6 },
-  serviceRowCopy: { flex: 1, minWidth: 0, marginLeft: 12, marginRight: 6 },
-  serviceRowTitle: { color: colors.text, fontSize: 16, lineHeight: 22, fontWeight: "700" },
-  serviceRowDescription: { marginTop: 3, color: colors.secondary, fontSize: 13, lineHeight: 18 },
-  badgeRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 6 },
-  availabilityBadge: { alignSelf: "flex-start", paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7, backgroundColor: colors.greenSoft, color: colors.greenDark, fontSize: 10, fontWeight: "700" },
-  informationBadge: { backgroundColor: colors.orangeSoft, color: colors.orange },
-  unavailableBadge: { backgroundColor: "#F1F2F4", color: colors.secondary },
-  environmentText: { color: colors.muted, fontSize: 10, fontWeight: "700" },
+  surfaceCard: { width: "100%", overflow: "hidden", borderRadius: appRadii.card, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, shadowColor: colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 10, elevation: 2 },
+  serviceRow: { minHeight: 84, flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8 },
+  serviceRowMain: { flex: 1, minWidth: 0, minHeight: 68, flexDirection: "row", alignItems: "center" },
+  serviceRowCopy: { flex: 1, minWidth: 0, marginLeft: 12 },
+  serviceRowTitle: { ...appTypography.supporting, color: colors.text, fontSize: 16, lineHeight: 22, fontWeight: "600" },
+  serviceRowDescription: { ...appTypography.metadata, flexShrink: 1, marginTop: 3, color: colors.secondary, fontSize: 14, lineHeight: 19 },
+  serviceRowStatus: { marginTop: 3, color: colors.orange, fontSize: 11, lineHeight: 15, fontWeight: "700" },
+  serviceRowStatusUnavailable: { color: colors.secondary },
   serviceIcon: { width: 45, height: 45, flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: 23 },
-  favouriteButton: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
-  divider: { height: StyleSheet.hairlineWidth, marginLeft: 70, backgroundColor: colors.divider },
-  favouritesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  favouritesSingleColumn: { flexDirection: "column" },
-  favouriteTile: { position: "relative", minHeight: 126, flex: 1, minWidth: 0, borderRadius: 18, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, shadowColor: colors.text, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
-  favouriteTileMain: { minHeight: 126, padding: 14, paddingRight: 48 },
-  favouriteTileTitle: { marginTop: 10, color: colors.text, fontSize: 15, lineHeight: 20, fontWeight: "700" },
-  favouriteStar: { position: "absolute", top: 5, right: 5 },
-  reorderControls: { position: "absolute", right: 8, bottom: 6, flexDirection: "row", gap: 2 },
-  reorderButton: { minWidth: 30, minHeight: 30, alignItems: "center", justifyContent: "center", borderRadius: 9, backgroundColor: colors.greenSoft },
-  disabled: { opacity: 0.45 },
-  emptyFavourites: { minHeight: 84, flexDirection: "row", alignItems: "center", gap: 12, marginTop: 25, padding: 16, borderRadius: 18, backgroundColor: colors.greenSoft, borderWidth: 1, borderColor: "#D5EEE7" },
-  emptyFavouritesCopy: { flex: 1 },
-  emptyTitle: { color: colors.greenDark, fontSize: 14, fontWeight: "700" },
-  emptyDescription: { marginTop: 3, color: colors.secondary, fontSize: 13, lineHeight: 18 },
-  noResultsCard: { alignItems: "center", marginTop: 24, padding: 28, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  noResultsTitle: { marginTop: 12, color: colors.text, fontSize: 18, fontWeight: "700" },
-  noResultsDescription: { maxWidth: 330, marginTop: 6, color: colors.secondary, fontSize: 14, lineHeight: 21, textAlign: "center" },
+  trailing: { flexDirection: "row", alignItems: "center", gap: 4, marginLeft: 4, flexShrink: 0 },
+  favouriteButton: { minWidth: 40, minHeight: 40, alignItems: "center", justifyContent: "center" },
+  chevronButton: { width: 24, height: 40, alignItems: "flex-end", justifyContent: "center" },
+  divider: { height: StyleSheet.hairlineWidth, marginLeft: 73, backgroundColor: colors.divider },
+  noResultsCard: { minHeight: 68, flexDirection: "row", alignItems: "center", marginTop: 20, paddingHorizontal: 14, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  noResultsCopy: { flex: 1, minWidth: 0, marginLeft: 10 },
+  noResultsTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  noResultsDescription: { marginTop: 3, color: colors.secondary, fontSize: 12, lineHeight: 17 },
+  clearResultsButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
+  clearResultsText: { color: colors.greenDark, fontSize: 13, fontWeight: "700" },
+  loadError: { minHeight: 72, flexDirection: "row", alignItems: "center", marginTop: 32, paddingHorizontal: 14, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  loadErrorCopy: { flex: 1, minWidth: 0, marginLeft: 10 },
+  loadErrorTitle: { color: colors.text, fontSize: 14, fontWeight: "700" },
+  loadErrorDescription: { marginTop: 2, color: colors.secondary, fontSize: 12, lineHeight: 17 },
+  retryButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
+  retryText: { color: colors.greenDark, fontSize: 13, fontWeight: "700" },
+  skeletonTile: { backgroundColor: colors.surfaceMuted },
+  skeletonQuickIcon: { width: 45, height: 45, borderRadius: 23, backgroundColor: "#E7ECEE" },
+  skeletonQuickLabel: { width: "58%", height: 10, marginTop: 8, borderRadius: 5, backgroundColor: "#E7ECEE" },
+  skeletonChip: { width: 72, height: 36, borderRadius: 18, backgroundColor: "#E7ECEE" },
+  skeletonChipWide: { width: 48 },
+  skeletonSectionHeading: { width: 148, height: 22, marginTop: 4, marginBottom: 10, borderRadius: 11, backgroundColor: "#E7ECEE" },
+  skeletonServiceRow: { minHeight: 88, flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8 },
+  skeletonServiceDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  skeletonServiceIcon: { width: 45, height: 45, borderRadius: 23, backgroundColor: "#E7ECEE" },
+  skeletonServiceCopy: { flex: 1, marginLeft: 12 },
+  skeletonServiceTitle: { width: "52%", height: 13, borderRadius: 7, backgroundColor: "#E7ECEE" },
+  skeletonServiceDescription: { width: "78%", height: 10, marginTop: 8, borderRadius: 5, backgroundColor: "#EEF1F3" },
+  skeletonChevron: { width: 20, height: 20, marginLeft: 12, borderRadius: 10, backgroundColor: "#EEF1F3" },
   secondaryButton: { minHeight: 44, justifyContent: "center", marginTop: 16, paddingHorizontal: 16, borderRadius: 12, backgroundColor: colors.greenSoft },
   secondaryButtonText: { color: colors.greenDark, fontSize: 14, fontWeight: "700" },
-  helpCard: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 28, padding: 15, borderRadius: 18, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  helpIcon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 21, backgroundColor: colors.greenSoft },
-  helpCopy: { flex: 1, minWidth: 0 },
-  helpTitle: { color: colors.text, fontSize: 14, fontWeight: "700" },
-  helpDescription: { marginTop: 3, color: colors.secondary, fontSize: 12, lineHeight: 17 },
-  helpLink: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 4 },
-  helpLinkText: { color: colors.greenDark, fontSize: 13, fontWeight: "700" },
   modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(17,24,39,0.38)" },
   modalCard: { maxHeight: "82%", padding: 20, paddingBottom: 28, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: colors.surface },
   modalHeader: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
   modalTitle: { color: colors.text, fontSize: 20, fontWeight: "700" },
   modalSubtitle: { marginTop: 3, color: colors.secondary, fontSize: 13 },
-  modalOption: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
   modalOptionText: { color: colors.text, fontSize: 15, fontWeight: "600" },
   resourceOption: { minHeight: 68, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
   resourceOptionCopy: { flex: 1 },

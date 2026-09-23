@@ -5,9 +5,10 @@ import { Platform, StyleSheet, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppHeader } from "@/components/navigation/app-header";
+import { appColors, appShadows } from "@/components/theme/tokens";
 
-const ACTIVE_COLOR = "#00866A";
-const INACTIVE_COLOR = "#9CA3AF";
+const ACTIVE_COLOR = appColors.primary;
+const INACTIVE_COLOR = appColors.textSecondary;
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -53,7 +54,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "home" : "home-outline"}
-              size={29}
+              size={24}
               color={color}
             />
           ),
@@ -72,7 +73,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "business" : "business-outline"}
-              size={29}
+              size={24}
               color={color}
             />
           ),
@@ -91,7 +92,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "chatbubble-ellipses" : "chatbubble-ellipses-outline"}
-              size={29}
+              size={24}
               color={color}
             />
           ),
@@ -110,7 +111,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <Ionicons
               name="menu"
-              size={32}
+              size={24}
               color={color}
             />
           ),
@@ -123,18 +124,11 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: "#FFFFFF",
-    borderTopColor: "#E5E7EB",
+    backgroundColor: appColors.surface,
+    borderTopColor: appColors.border,
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 10,
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: -2,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 10,
+    paddingTop: 6,
+    ...appShadows.navigation,
     position: "absolute",
     left: 0,
     right: 0,
@@ -148,8 +142,8 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
   tabBarLabel: {
-    fontSize: 15,
-    lineHeight: 20,
-    marginTop: 3,
+    fontSize: 13,
+    lineHeight: 17,
+    marginTop: 2,
   },
 });

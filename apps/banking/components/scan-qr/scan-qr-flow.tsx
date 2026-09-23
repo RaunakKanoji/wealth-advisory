@@ -9,6 +9,7 @@ import {
   AppState,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -43,6 +44,7 @@ import { createTransferQrIntake } from "@/services/transfer-service";
 import type { BankAccount } from "@/types/banking";
 import type { PaymentAttempt, PaymentDraft, PaymentInputMethod } from "@/types/payments";
 import { useUser } from "@clerk/expo";
+import { appColors, appSpacing, appTypography } from "@/components/theme/tokens";
 
 type FlowStage = "scan" | "manual" | "review" | "result";
 type ScannerState =
@@ -54,6 +56,8 @@ type ScannerState =
   | "validating-qr"
   | "paused"
   | "error"
+  | "invalid-qr"
+  | "camera-unavailable"
   | "image-candidates";
 
 type ImageCandidate = {
@@ -64,19 +68,20 @@ type ImageCandidate = {
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION = 6000;
 const colors = {
-  background: "#F7F8FA",
-  surface: "#FFFFFF",
-  text: "#14201D",
-  secondary: "#687386",
-  muted: "#8B96A5",
-  border: "#E5E9EC",
-  green: "#007E5D",
-  greenDark: "#006A4E",
-  greenSoft: "#E6F3EF",
-  orange: "#F45B2A",
-  orangeSoft: "#FFF0EA",
-  danger: "#B42318",
-  dangerSoft: "#FEF3F2",
+  background: appColors.background,
+  surface: appColors.surface,
+  text: appColors.textPrimary,
+  secondary: appColors.textSecondary,
+  muted: appColors.textMuted,
+  border: appColors.border,
+  green: appColors.primary,
+  greenDark: appColors.primaryPressed,
+  greenSoft: appColors.primarySoft,
+  orange: appColors.orangeAccent,
+  orangeText: appColors.orangeText,
+  orangeSoft: appColors.warningSoft,
+  danger: appColors.danger,
+  dangerSoft: appColors.dangerSoft,
 } as const;
 
 function createClientKey() {
@@ -98,7 +103,7 @@ function statusForScanner(state: ScannerState) {
     case "validating-qr":
       return "QR detected. Checking details…";
     default:
-      return "Position the QR inside the frame.";
+      return "Align the QR inside the frame";
   }
 }
 
@@ -112,13 +117,24 @@ function readableError(error: unknown) {
   return "We could not process that QR. Try another image or enter the UPI ID manually.";
 }
 
+function readableQrError(error: unknown) {
+  if (error instanceof PaymentQrParseError) {
+    return "This QR can't be used for a UPI payment.";
+  }
+  return readableError(error);
+}
+
+function isInvalidQrError(error: unknown) {
+  return error instanceof PaymentQrParseError;
+}
+
 export function ScanQrFlow() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const { user } = useUser();
   const { width } = useWindowDimensions();
   const customerId = user?.id ?? DEMO_CUSTOMER_A;
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [cameraPermission, requestCameraPermission, getCameraPermission] = useCameraPermissions();
   const [stage, setStage] = useState<FlowStage>("scan");
   const [scannerState, setScannerState] = useState<ScannerState>("permission-required");
   const [cameraActive, setCameraActive] = useState(false);
@@ -181,6 +197,26 @@ export function ScanQrFlow() {
     });
     return () => subscription.remove();
   }, [cameraActive, stage]);
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") return;
+
+      void getCameraPermission().then((permission) => {
+        if (!mounted.current || !focused.current) return;
+        if (permission.granted && !cameraActive && cameraPermission?.granted === false) {
+          setScanError(null);
+          setScannerState("permission-required");
+        }
+      }).catch(() => {
+        // The permission card remains available if the OS cannot be queried.
+      });
+    });
+
+    return () => subscription.remove();
+  }, [cameraActive, cameraPermission, getCameraPermission]);
 
   const goBackSafely = useCallback(() => {
     setCameraActive(false);
@@ -265,8 +301,8 @@ export function ScanQrFlow() {
     try {
       void openReview(parsePaymentQr(result.data), "camera");
     } catch (error) {
-      setScanError(readableError(error));
-      setScannerState("error");
+      setScanError(readableQrError(error));
+      setScannerState(isInvalidQrError(error) ? "invalid-qr" : "error");
       detectionLock.current = false;
     }
   }, [openReview]);
@@ -301,11 +337,12 @@ export function ScanQrFlow() {
   const handleMountError = useCallback((message: string) => {
     if (!mounted.current) return;
     setCameraActive(false);
-    setScannerState("error");
+    const cameraUnavailable = /not found|no camera|unavailable|busy/i.test(message);
+    setScannerState(cameraUnavailable ? "camera-unavailable" : "error");
     setScanError(/permission|denied|not allowed/i.test(message)
       ? "Camera access is blocked. You can allow it in your browser or device settings, or use another method."
-      : /not found|no camera|unavailable|busy/i.test(message)
-        ? "No usable camera is available right now. Try uploading a QR image or enter the UPI ID manually."
+      : cameraUnavailable
+        ? "You can still upload a QR image or enter a UPI ID."
         : "The camera could not start. Try again or use another method.");
   }, []);
 
@@ -325,7 +362,7 @@ export function ScanQrFlow() {
 
     if (cameraPermission && !cameraPermission.granted && cameraPermission.canAskAgain === false) {
       setScannerState("error");
-      setScanError("Camera access is blocked in your browser or device settings. Enable it there, or choose Upload QR or Enter UPI ID.");
+      setScanError("Camera access is off. Allow it in Settings or use another payment method.");
       return;
     }
 
@@ -338,14 +375,14 @@ export function ScanQrFlow() {
       if (!mounted.current || !focused.current) return;
       if (!response.granted && response.canAskAgain === false) {
         setScannerState("error");
-        setScanError("Camera access is blocked in your browser or device settings. Enable it there, or choose Upload QR or Enter UPI ID.");
+        setScanError("Camera access is off. Allow it in Settings or use another payment method.");
         return;
       }
       if (!response.granted) {
         setScannerState("error");
         setScanError(response.canAskAgain
           ? "Camera access was not granted. You can try again or choose Upload QR or Enter UPI ID."
-          : "Camera access is blocked in your browser or device settings. Enable it there, or choose Upload QR or Enter UPI ID.");
+          : "Camera access is off. Allow it in Settings or use another payment method.");
         return;
       }
       setScannerState("starting-camera");
@@ -358,9 +395,16 @@ export function ScanQrFlow() {
   }, [cameraPermission, requestCameraPermission]);
 
   const handleResumeCamera = useCallback(() => {
-    setScanError(null);
-    setScannerState("starting-camera");
-    setCameraActive(true);
+    void handleEnableCamera();
+  }, [handleEnableCamera]);
+
+  const handleOpenSettings = useCallback(() => {
+    if (Platform.OS === "web") return;
+    void Linking.openSettings().catch(() => {
+      if (mounted.current) {
+        setScanError("Open Settings to allow camera access, or use another payment method.");
+      }
+    });
   }, []);
 
   const handleSwitchCamera = useCallback(() => {
@@ -421,7 +465,7 @@ export function ScanQrFlow() {
         data: item.data,
       }));
       if (candidates.length === 0) {
-        throw new Error("We could not find a readable QR in that image. Try better lighting or crop closer to one code.");
+        throw new Error("No QR found in this image");
       }
       detectionLock.current = true;
       if (candidates.length > 1) {
@@ -432,8 +476,8 @@ export function ScanQrFlow() {
       }
     } catch (error) {
       if (mounted.current && imageJobId.current === currentJobId) {
-        setScanError(readableError(error));
-        setScannerState("error");
+        setScanError(readableQrError(error));
+        setScannerState(isInvalidQrError(error) ? "invalid-qr" : "error");
         detectionLock.current = false;
       }
     } finally {
@@ -460,8 +504,8 @@ export function ScanQrFlow() {
     try {
       void openReview(parsePaymentQr(selected.data), "upload");
     } catch (error) {
-      setScanError(readableError(error));
-      setScannerState("error");
+      setScanError(readableQrError(error));
+      setScannerState(isInvalidQrError(error) ? "invalid-qr" : "error");
       detectionLock.current = false;
     }
   }, [imageCandidates, openReview]);
@@ -580,6 +624,7 @@ export function ScanQrFlow() {
               imageCandidates={imageCandidates}
               onEnableCamera={() => void handleEnableCamera()}
               onResumeCamera={handleResumeCamera}
+              onOpenSettings={handleOpenSettings}
               onSwitchCamera={handleSwitchCamera}
               onBarcodeScanned={handleBarcodeScanned}
               onCameraReady={handleCameraReady}
@@ -660,6 +705,7 @@ type ScanStageProps = {
   imageCandidates: ImageCandidate[];
   onEnableCamera: () => void;
   onResumeCamera: () => void;
+  onOpenSettings: () => void;
   onSwitchCamera: () => void;
   onBarcodeScanned: (result: BarcodeScanningResult) => void;
   onCameraReady: () => void;
@@ -681,6 +727,7 @@ function ScanStage({
   imageCandidates,
   onEnableCamera,
   onResumeCamera,
+  onOpenSettings,
   onSwitchCamera,
   onBarcodeScanned,
   onCameraReady,
@@ -691,17 +738,22 @@ function ScanStage({
   onChooseCandidate,
 }: ScanStageProps) {
   const permissionLoading = cameraPermission === null;
-  const showError = scannerState === "error" || scannerState === "paused";
+  const showError = scannerState === "error"
+    || scannerState === "invalid-qr"
+    || scannerState === "camera-unavailable"
+    || scannerState === "paused";
+  const permanentlyDenied = cameraPermission?.granted === false && cameraPermission.canAskAgain === false;
+  const canOpenSettings = permanentlyDenied && Platform.OS !== "web";
 
   return (
     <View>
-      <Text style={styles.introTitle}>Scan a UPI QR to review payment details.</Text>
-      <Text style={styles.introDescription}>No payment is made until you confirm.</Text>
-
       <View style={styles.demoBanner}>
         <Ionicons name="information-circle-outline" size={20} color={colors.orange} />
-        <Text style={styles.demoBannerText}>Demo mode — no money will be transferred.</Text>
+        <Text style={styles.demoBannerText}>Demo Mode</Text>
       </View>
+
+      <Text accessibilityRole="header" style={styles.introTitle}>Scan to Pay via QR</Text>
+      <Text style={styles.introDescription}>No payment is made until you confirm.</Text>
 
       {showCamera ? (
         <View>
@@ -713,7 +765,7 @@ function ScanStage({
             onMountError={onMountError}
           />
           <View style={styles.cameraControls}>
-            <Text style={styles.cameraHint}>QR codes are checked only inside the frame when bounds are available.</Text>
+            <Text style={styles.cameraHint}>Point the camera at a UPI QR code.</Text>
             {hasMultipleCameras ? (
               <Pressable
                 accessibilityRole="button"
@@ -747,11 +799,17 @@ function ScanStage({
                     ? "QR detected. Checking details…"
                   : scannerState === "image-candidates"
                     ? "Choose a QR to review"
-                    : scannerState === "paused"
-                      ? "Camera paused"
-                      : showError
-                        ? "We could not start the camera"
-                        : "Enable camera to scan"}
+                    : scannerState === "invalid-qr"
+                      ? "QR not supported"
+                      : scannerState === "camera-unavailable"
+                        ? "Camera unavailable"
+                        : permanentlyDenied
+                          ? "Allow Camera Access"
+                          : scannerState === "paused"
+                            ? "Camera paused"
+                            : showError
+                              ? "We could not start the camera"
+                              : "Enable camera to scan"}
           </Text>
           <Text style={styles.cameraMessageBody}>
             {scanError
@@ -759,10 +817,18 @@ function ScanStage({
                 ? "The camera is paused while we validate this payment request."
                 : scannerState === "paused"
                 ? "The camera stopped when the app was backgrounded. Resume only when you are ready."
-                : "Camera access is used to scan QR codes. You can upload an image or enter a UPI ID instead.")}
+                : permanentlyDenied
+                  ? Platform.OS === "web"
+                    ? "Allow camera access in your browser settings, or use another payment method."
+                    : "Allow camera access in Settings, or use another payment method."
+                : scanError === "No QR found in this image"
+                  ? "Choose another image or try scanning with your camera."
+                : "Camera access is used only to scan QR codes.")}
           </Text>
           {!permissionLoading && scannerState === "paused" ? (
             <PrimaryButton label="Resume scanning" onPress={onResumeCamera} />
+          ) : canOpenSettings ? (
+            <PrimaryButton label="Open Settings" onPress={onOpenSettings} />
           ) : !permissionLoading
             && scannerState !== "processing-image"
             && scannerState !== "image-candidates"
@@ -774,7 +840,7 @@ function ScanStage({
               loading={scannerState === "requesting-permission"}
             />
           ) : null}
-          {showError ? (
+          {showError && !canOpenSettings ? (
             <SecondaryButton label="Try again" onPress={onTryAgain} />
           ) : null}
         </View>
@@ -819,7 +885,7 @@ function ScanStage({
 
       <View style={styles.safetyNote}>
         <Ionicons name="shield-checkmark-outline" size={19} color={colors.green} />
-        <Text style={styles.safetyText}>Confirm the recipient and amount before any payment action.</Text>
+        <Text style={styles.safetyText}>Always confirm the recipient and amount before continuing.</Text>
       </View>
     </View>
   );
@@ -1004,7 +1070,7 @@ function ReviewStage({
 
         <View style={styles.demoReviewBanner}>
           <Ionicons name="information-circle-outline" size={19} color={colors.orange} />
-          <Text style={styles.demoReviewText}>Demo mode — no money will be transferred.</Text>
+          <Text style={styles.demoReviewText}>Demo Mode</Text>
         </View>
         {error ? <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text> : null}
         <PrimaryButton
@@ -1162,7 +1228,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignSelf: "center",
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingBottom: appSpacing.xxl,
   },
   header: {
     minHeight: 64,
@@ -1195,8 +1261,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.greenSoft,
   },
   helpCardText: { flex: 1, marginLeft: 10, color: colors.text, fontSize: 13, lineHeight: 19 },
-  introTitle: { marginTop: 10, color: colors.text, fontSize: 26, lineHeight: 33, fontWeight: "800" },
-  introDescription: { marginTop: 7, color: colors.secondary, fontSize: 15, lineHeight: 22 },
+  introTitle: { ...appTypography.pageTitle, marginTop: 16, color: colors.text },
+  introDescription: { ...appTypography.body, marginTop: 8, color: colors.secondary },
   demoBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1206,7 +1272,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.orangeSoft,
   },
-  demoBannerText: { flex: 1, marginLeft: 8, color: "#8E3B1D", fontSize: 13, lineHeight: 18, fontWeight: "700" },
+  demoBannerText: { flex: 1, marginLeft: 8, color: colors.orangeText, fontSize: 13, lineHeight: 18, fontWeight: "700" },
   cameraMessageCard: {
     alignItems: "center",
     marginTop: 18,
@@ -1216,7 +1282,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  cameraMessageCardError: { backgroundColor: "#FFFCFB", borderColor: "#F6C8C2" },
+  cameraMessageCardError: { backgroundColor: colors.surface, borderColor: colors.dangerSoft },
   cameraMessageIcon: {
     width: 62,
     height: 62,
@@ -1252,18 +1318,18 @@ const styles = StyleSheet.create({
   alternativeSection: { marginTop: 22 },
   alternativeTitle: { color: colors.text, fontSize: 15, fontWeight: "800" },
   alternativeRow: { flexDirection: "row", gap: 10, marginTop: 10 },
-  alternativeButton: { flex: 1, minHeight: 68, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  alternativeButton: { flex: 1, minHeight: 76, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   alternativeButtonText: { marginTop: 5, color: colors.greenDark, fontSize: 13, fontWeight: "700" },
-  safetyNote: { flexDirection: "row", alignItems: "flex-start", marginTop: 18, padding: 13, borderRadius: 14, backgroundColor: colors.greenSoft },
-  safetyText: { flex: 1, marginLeft: 8, color: colors.greenDark, fontSize: 12, lineHeight: 18 },
+  safetyNote: { flexDirection: "row", alignItems: "flex-start", marginTop: 20, padding: 13, borderRadius: 14, backgroundColor: colors.greenSoft },
+  safetyText: { flex: 1, marginLeft: 8, color: colors.greenDark, fontSize: 13, lineHeight: 19 },
   formCard: { marginTop: 18, padding: 18, borderRadius: 22, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   fieldLabel: { marginTop: 15, marginBottom: 7, color: colors.text, fontSize: 13, fontWeight: "700" },
-  textInput: { minHeight: 50, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, color: colors.text, fontSize: 16, backgroundColor: "#FCFDFD" },
+  textInput: { minHeight: 50, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, color: colors.text, fontSize: 16, backgroundColor: colors.surface },
   errorText: { marginTop: 10, color: colors.danger, fontSize: 13, lineHeight: 19 },
   primaryButton: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 18, paddingHorizontal: 16, borderRadius: 14, backgroundColor: colors.green },
   primaryButtonPressed: { backgroundColor: colors.greenDark },
   disabledButton: { opacity: 0.5 },
-  primaryButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800", textAlign: "center" },
+  primaryButtonText: { color: colors.surface, fontSize: 15, fontWeight: "800", textAlign: "center" },
   secondaryButton: { minHeight: 48, alignItems: "center", justifyContent: "center", marginTop: 9, paddingHorizontal: 14, borderRadius: 14 },
   secondaryButtonText: { color: colors.greenDark, fontSize: 14, fontWeight: "800" },
   reviewCard: { marginTop: 18, padding: 18, borderRadius: 22, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
@@ -1277,7 +1343,7 @@ const styles = StyleSheet.create({
   reviewDivider: { height: 1, marginVertical: 18, backgroundColor: colors.border },
   lockedAmount: { marginTop: 10 },
   amountValue: { color: colors.text, fontSize: 28, fontWeight: "800" },
-  amountInputWrap: { minHeight: 58, flexDirection: "row", alignItems: "center", paddingHorizontal: 14, borderRadius: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: "#FCFDFD" },
+  amountInputWrap: { minHeight: 58, flexDirection: "row", alignItems: "center", paddingHorizontal: 14, borderRadius: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   currencyPrefix: { color: colors.text, fontSize: 22, fontWeight: "700" },
   amountInput: { flex: 1, minHeight: 54, marginLeft: 8, color: colors.text, fontSize: 23, fontWeight: "700" },
   noteRow: { marginTop: 18 },
@@ -1292,7 +1358,7 @@ const styles = StyleSheet.create({
   accountName: { color: colors.text, fontSize: 14, fontWeight: "700" },
   accountBalance: { marginTop: 3, color: colors.secondary, fontSize: 12 },
   demoReviewBanner: { flexDirection: "row", alignItems: "center", marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: colors.orangeSoft },
-  demoReviewText: { flex: 1, marginLeft: 7, color: "#8E3B1D", fontSize: 12, lineHeight: 17, fontWeight: "700" },
+  demoReviewText: { flex: 1, marginLeft: 7, color: colors.orangeText, fontSize: 12, lineHeight: 17, fontWeight: "700" },
   resultHero: { alignItems: "center", marginTop: 24 },
   resultIcon: { width: 78, height: 78, alignItems: "center", justifyContent: "center", borderRadius: 39 },
   resultTitle: { marginTop: 17, color: colors.text, fontSize: 25, lineHeight: 32, fontWeight: "800", textAlign: "center" },

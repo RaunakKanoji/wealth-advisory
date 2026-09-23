@@ -1,13 +1,10 @@
-import React from "react";
-
-import { AccountActionScreen } from "@/components/accounts/account-action-screen";
+import { TransactionExplorerScreen } from "@/components/transactions/transaction-explorer-screen";
 
 export default function AccountStatementsScreen() {
   return (
-    <AccountActionScreen
+    <TransactionExplorerScreen
       title="Statements"
-      description="Your account statements will be available here."
-      allowAccountSelection
+      subtitle="Review and export account activity. Exports are clearly marked as summaries, not official bank statements."
     />
   );
 }

@@ -12,6 +12,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { appColors } from "@/components/theme/tokens";
+import { useDemoSession } from "@/lib/demo-session";
+
 type AppHeaderProps = {
   sourceRoute?: string;
   unreadCount?: number;
@@ -21,13 +24,13 @@ type AppHeaderProps = {
 };
 
 const headerTokens = {
-  background: "#FFFFFF",
-  border: "#E5E7EB",
-  icon: "#4B5563",
-  brandGreen: "#00866A",
-  avatarBackground: "#EAF5F2",
-  avatarBorder: "#B8DED5",
-  badge: "#EF4444",
+  background: appColors.surface,
+  border: appColors.border,
+  icon: appColors.textSecondary,
+  brandGreen: appColors.primary,
+  avatarBackground: appColors.primarySoft,
+  avatarBorder: appColors.primaryBorder,
+  badge: appColors.danger,
 };
 
 function getInitials(
@@ -63,29 +66,32 @@ export function AppHeader({
 }: AppHeaderProps) {
   const router = useRouter();
   const { user, isLoaded } = useUser();
+  const { session: demoSession } = useDemoSession();
   const { width: screenWidth } = useWindowDimensions();
+  const [logoReady, setLogoReady] = React.useState(false);
 
-  const email = user?.primaryEmailAddress?.emailAddress ?? null;
-  const initials = getInitials(user?.firstName, user?.lastName, email);
+  const email = user?.primaryEmailAddress?.emailAddress ?? demoSession?.email ?? null;
+  const initials = getInitials(user?.firstName ?? demoSession?.displayName.split(" ")[0], user?.lastName ?? demoSession?.displayName.split(" ").slice(1).join(" "), email);
+  const profileLoaded = isLoaded || Boolean(demoSession);
 
   // Responsive design adjustments based on standard specifications
   const isSmallScreen = screenWidth < 375;
   const isTablet = screenWidth >= 768;
 
-  const logoHeight = isTablet ? 54 : isSmallScreen ? 40 : 48;
+  const logoHeight = isTablet ? 48 : isSmallScreen ? 34 : 40;
   const logoWidth = logoHeight * 3.208;
   const paddingHorizontal = isTablet ? 32 : isSmallScreen ? 16 : 20;
-  const minHeight = isTablet ? 96 : isSmallScreen ? 78 : 92;
-  const actionGap = isTablet ? 26 : isSmallScreen ? 14 : 20;
+  const minHeight = isTablet ? 84 : isSmallScreen ? 72 : 76;
+  const actionGap = isTablet ? 18 : isSmallScreen ? 6 : 10;
 
   // Icon and avatar size reductions
-  const bellIconSize = isTablet ? 32 : isSmallScreen ? 24 : 28;
+  const bellIconSize = isTablet ? 28 : isSmallScreen ? 22 : 24;
   const unreadBadgeTop = isTablet ? 6 : isSmallScreen ? 10 : 8;
   const unreadBadgeRight = isTablet ? 6 : isSmallScreen ? 10 : 8;
 
-  const avatarSize = isTablet ? 46 : isSmallScreen ? 36 : 40;
-  const avatarFontSize = isTablet ? 20 : isSmallScreen ? 14 : 16;
-  const avatarLineHeight = isTablet ? 26 : isSmallScreen ? 18 : 22;
+  const avatarSize = isTablet ? 44 : isSmallScreen ? 34 : 38;
+  const avatarFontSize = isTablet ? 18 : isSmallScreen ? 13 : 15;
+  const avatarLineHeight = isTablet ? 24 : isSmallScreen ? 17 : 20;
 
   const logoStyle = {
     width: logoWidth,
@@ -151,12 +157,22 @@ export function AppHeader({
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={[styles.header, headerStyle, dynamicHeaderStyle]}>
-        <Image
-          source={require("@/assets/branding/idbi-bank-logo.png")}
-          resizeMode="contain"
-          style={logoStyle}
-          accessibilityLabel="IDBI Bank"
-        />
+        <View style={[styles.brandLockup, logoStyle]}>
+          {!logoReady ? (
+            <View accessibilityLabel="IDBI Bank" style={styles.brandFallback}>
+              <View style={styles.brandFallbackMark} />
+              <Text style={styles.brandFallbackText}>IDBI BANK</Text>
+            </View>
+          ) : null}
+          <Image
+            source={require("@/assets/branding/idbi-bank-logo.png")}
+            resizeMode="contain"
+            onLoad={() => setLogoReady(true)}
+            onError={() => setLogoReady(false)}
+            style={[styles.logo, logoStyle, !logoReady && styles.logoPending]}
+            accessibilityLabel="IDBI Bank"
+          />
+        </View>
 
         <View style={[styles.actions, actionStyle]}>
           <Pressable
@@ -197,14 +213,14 @@ export function AppHeader({
               pressed && styles.pressed,
             ]}
           >
-            {isLoaded && user?.imageUrl ? (
+            {profileLoaded && user?.imageUrl ? (
               <Image
                 source={{ uri: user.imageUrl }}
                 style={styles.avatarImage}
               />
             ) : (
               <Text style={[styles.avatarText, avatarTextStyle]}>
-                {isLoaded ? initials : ""}
+                {profileLoaded ? initials : ""}
               </Text>
             )}
           </Pressable>
@@ -225,16 +241,48 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  logo: {
+    flexShrink: 0,
+  },
+  brandLockup: {
+    flexShrink: 0,
+    justifyContent: "center",
+  },
+  logoPending: {
+    opacity: 0,
+  },
+  brandFallback: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  brandFallbackMark: {
+    width: 24,
+    height: 24,
+    marginRight: 7,
+    borderRadius: 12,
+    borderWidth: 3,
+    borderColor: "#f58220",
+  },
+  brandFallbackText: {
+    color: "#008a70",
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
   actions: {
     flexDirection: "row",
     alignItems: "center",
   },
   iconButton: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 24,
+    borderRadius: 22,
   },
   unreadBadge: {
     position: "absolute",

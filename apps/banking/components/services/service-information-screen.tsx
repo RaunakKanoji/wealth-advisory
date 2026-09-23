@@ -4,16 +4,17 @@ import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { getServiceDefinition } from "@/data/services-registry";
+import { appColors } from "@/components/theme/tokens";
 
 const colors = {
-  background: "#F7F8FA",
-  surface: "#FFFFFF",
-  text: "#111827",
-  secondary: "#6F7888",
-  green: "#007E5D",
-  greenSoft: "#E9F5F2",
-  border: "#E8EBEF",
-  orange: "#C43E12",
+  background: appColors.background,
+  surface: appColors.surface,
+  text: appColors.textPrimary,
+  secondary: appColors.textSecondary,
+  green: appColors.primary,
+  greenSoft: appColors.primarySoft,
+  border: appColors.border,
+  orange: appColors.orangeText,
 };
 
 export function ServiceInformationScreen() {

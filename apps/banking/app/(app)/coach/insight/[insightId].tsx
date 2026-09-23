@@ -1,20 +1,9 @@
 import { useLocalSearchParams } from "expo-router";
-import React from "react";
 
-import { CoachFlowScreen } from "@/components/coach/coach-flow-screen";
+import { InsightDetailScreen } from "@/components/coach/insight-detail-screen";
 
-export default function CoachInsightDetailScreen() {
-  const { insightId } = useLocalSearchParams<{ insightId?: string }>();
-  const isRetirementGoal = insightId === "retirement-fund";
+export default function CoachInsightDetailRoute() {
+  const { insightId } = useLocalSearchParams<"/(app)/coach/insight/[insightId]">();
 
-  return (
-    <CoachFlowScreen
-      title={isRetirementGoal ? "Retirement Fund" : "Insight details"}
-      description={
-        isRetirementGoal
-          ? "Review your retirement goal progress and the next steps available to you."
-          : "The detailed explanation and supporting actions for this Wealth Coach insight will appear here."
-      }
-    />
-  );
+  return <InsightDetailScreen insightId={insightId} />;
 }

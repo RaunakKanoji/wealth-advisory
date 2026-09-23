@@ -8,23 +8,17 @@ function serviceItems(ids: string[]): MoreActionItem[] {
 export const priorityActionItems: MoreActionItem[] = serviceItems([
   "transfer-money",
   "account-statements",
-  "security-settings",
-  "offers",
+  "my-cards",
+  "ask-wealth-coach",
 ]);
 
 export const bankingServiceItems: MoreActionItem[] = serviceItems([
   "my-accounts",
-  "loans",
-  "my-cards",
-  "investments-overview",
-  "insurance",
-  "tax-documents",
+  "transaction-history",
+  "financial-goals",
+  "spending-insights",
   "beneficiaries",
-  "service-requests",
+  "my-profile",
 ]);
 
-export const supportActionItems: MoreActionItem[] = serviceItems([
-  "help-center",
-  "contact-support",
-  "branch-atm-locator",
-]);
+export const supportActionItems: MoreActionItem[] = [];

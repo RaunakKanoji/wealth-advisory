@@ -1,8 +1,8 @@
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { formatIndianCurrencyWithoutSpace } from "@/lib/currency";
+import { privacySafeFinancialText } from "@/lib/privacy";
 import type { WealthInsight } from "@/types/wealth-coach";
 
 import { InsightCard } from "./insight-card";
@@ -11,63 +11,35 @@ import { coachColors } from "./tokens";
 type SipInsightCardProps = {
   insight: WealthInsight;
   onPress: () => void;
+  onAskCoach?: () => void;
+  balanceVisible?: boolean;
 };
 
-export function SipInsightCard({ insight, onPress }: SipInsightCardProps) {
-  const amount = insight.amount ?? 0;
+export function SipInsightCard({ insight, onPress, balanceVisible = true }: SipInsightCardProps) {
+  const title = balanceVisible ? insight.title : privacySafeFinancialText(insight.title, "Investment insight");
+  const description = balanceVisible
+    ? insight.summary?.trim() || insight.description
+    : "This investment insight is based on the financial context currently available.";
 
   return (
-    <InsightCard accessibilityLabel="View SIP recommendation" onPress={onPress}>
-      <View style={styles.row}>
-        <View style={styles.iconContainer}>
-          <MaterialCommunityIcons name="piggy-bank" size={25} color={coachColors.brandGreen} />
-        </View>
-
+    <InsightCard>
+      <Pressable accessibilityRole="button" accessibilityLabel={`View ${title} insight`} onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+        <View style={styles.iconContainer}><Ionicons name="trending-up-outline" size={27} color={coachColors.brandGreen} /></View>
         <View style={styles.copy}>
-          <Text style={styles.title}>
-            Increase your SIP by{`\n`}
-            <Text style={styles.amount}>{formatIndianCurrencyWithoutSpace(amount)}</Text>
-          </Text>
-          <Text style={styles.description}>{insight.description}</Text>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.description}>{description}</Text>
         </View>
-
-      </View>
+        <Ionicons name="chevron-forward" size={21} color={coachColors.iconMuted} />
+      </Pressable>
     </InsightCard>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  iconContainer: {
-    width: 52,
-    height: 52,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 26,
-    backgroundColor: "#E6F3EF",
-  },
-  copy: {
-    flex: 1,
-    marginLeft: 14,
-    marginRight: 8,
-  },
-  title: {
-    color: coachColors.textPrimary,
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: "700",
-  },
-  amount: {
-    color: coachColors.textPrimary,
-    fontWeight: "700",
-  },
-  description: {
-    marginTop: 5,
-    color: "#747E8E",
-    fontSize: 14,
-    lineHeight: 20,
-  },
+  row: { flexDirection: "row", alignItems: "center", borderRadius: 16 },
+  iconContainer: { width: 60, height: 60, alignItems: "center", justifyContent: "center", borderRadius: 30, backgroundColor: coachColors.brandGreenSoft },
+  copy: { flex: 1, minWidth: 0, marginHorizontal: 14 },
+  title: { color: coachColors.textPrimary, fontSize: 19, lineHeight: 25, fontWeight: "700" },
+  description: { marginTop: 6, color: coachColors.textSecondary, fontSize: 14, lineHeight: 19 },
+  pressed: { opacity: 0.78 },
 });

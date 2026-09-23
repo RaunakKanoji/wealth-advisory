@@ -85,10 +85,13 @@ const currentAccount = makeAccount({
 
 const fixedDepositDetails: FixedDepositDetails = {
   principal: inr(7_500_000),
-  reportedCurrentValue: inr(7_575_000),
+  // Keep the product detail aligned with the canonical account ledger used
+  // in the overview and total-balance summary.
+  reportedCurrentValue: inr(7_500_000),
   startDate: "2025-06-12",
   maturityDate: "2027-06-12",
   maturityValue: inr(8_100_000),
+  interestRate: "6.75% p.a.",
 };
 
 const fixedDeposit = makeAccount({

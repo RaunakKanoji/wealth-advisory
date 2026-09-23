@@ -71,6 +71,8 @@ export type BankAccount = {
   /** Legacy major-unit value kept for existing cards; calculations use minorUnits. */
   balance: number;
   balanceMinorUnits: number;
+  /** False when no balance snapshot exists; numeric compatibility fields must not be presented as real zero. */
+  balanceDataAvailable?: boolean;
   availableBalance?: number;
   availableBalanceMinorUnits?: number;
   ledgerBalance?: number;
@@ -86,12 +88,84 @@ export type BankAccount = {
   ifsc?: string;
   openingDate?: string;
   ownershipMode?: string;
-  sourceEnvironment: "Demo data";
+  sourceEnvironment: string;
   lastSuccessfulUpdate: string;
   holdsMinorUnits?: number;
   fixedDeposit?: FixedDepositDetails;
   recurringDeposit?: RecurringDepositDetails;
   capabilities: AccountCapabilities;
+};
+
+export type AccountOverviewAction =
+  | "transfer"
+  | "statement"
+  | "details"
+  | "maturity"
+  | "schedule";
+
+type AccountOverviewBase = {
+  /** Original domain record retained for existing details and action routes. */
+  account: BankAccount;
+  id: string;
+  type: AccountType;
+  displayName: string;
+  typeLabel: string;
+  lastFour: string;
+  isPrimary: boolean;
+  status: AccountStatus;
+  mainBalanceLabel: string;
+  /** `null` means the source did not provide this value; zero remains a real zero. */
+  mainBalanceMinorUnits: number | null;
+  actions: readonly AccountOverviewAction[];
+};
+
+export type TransactionAccountOverview = AccountOverviewBase & {
+  productKind: "transaction";
+  type: "savings" | "current" | "salary";
+  mainBalanceLabel: "Available balance";
+  currentBalanceMinorUnits: number | null;
+  actions: readonly ["transfer", "statement", "details"];
+};
+
+export type FixedDepositAccountOverview = AccountOverviewBase & {
+  productKind: "fixed-deposit";
+  type: "fixed-deposit";
+  mainBalanceLabel: "Current value";
+  principalMinorUnits: number | null;
+  maturityValueMinorUnits: number | null;
+  interestRate?: string;
+  maturityDate?: string;
+  actions: readonly ["maturity", "statement", "details"];
+};
+
+export type RecurringDepositAccountOverview = AccountOverviewBase & {
+  productKind: "recurring-deposit";
+  type: "recurring-deposit";
+  mainBalanceLabel: "Current value";
+  monthlyContributionMinorUnits: number | null;
+  contributionFrequency?: RecurringDepositDetails["contributionFrequency"];
+  nextDepositDate?: string;
+  maturityDate?: string;
+  actions: readonly ["schedule", "statement", "details"];
+};
+
+export type AccountOverviewItem =
+  | TransactionAccountOverview
+  | FixedDepositAccountOverview
+  | RecurringDepositAccountOverview;
+
+export type AccountsOverview = {
+  summary: {
+    totalBalanceMinorUnits: number | null;
+    availableToSpendMinorUnits: number | null;
+    depositBalanceMinorUnits: number | null;
+    accountCount: number;
+  };
+  accounts: AccountOverviewItem[];
+  meta: {
+    lastUpdated: string | null;
+    source: string | null;
+  };
 };
 
 export type AccountTransaction = {
@@ -113,7 +187,9 @@ export type AccountTransaction = {
   originalCategory: TransactionCategory;
   reference?: string;
   linkedTransactionId?: string;
-  sourceEnvironment: "Demo data";
+  /** Stable relationship supplied by the transfer ledger for grouping, never inferred from amount/date. */
+  activityGroupId?: string;
+  sourceEnvironment: string;
   annotation?: {
     category?: TransactionCategory;
     note?: string;

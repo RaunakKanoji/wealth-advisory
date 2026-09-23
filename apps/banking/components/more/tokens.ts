@@ -1,18 +1,20 @@
+import { appColors } from "@/components/theme/tokens";
+
 export const moreColors = {
-  background: "#F7F8FA",
-  surface: "#FFFFFF",
-  textPrimary: "#111827",
-  textSecondary: "#6F7888",
-  textMuted: "#9CA3AF",
-  brandGreen: "#007E5D",
-  brandGreenDark: "#006A4E",
-  brandGreenSoft: "#DDF7EF",
-  brandGreenBorder: "#C6E6DD",
-  brandOrange: "#C43E12",
-  brandOrangeSoft: "#F5C7B5",
-  border: "#E8EBEF",
-  divider: "#EDF0F2",
-  chevron: "#79584A",
+  background: appColors.background,
+  surface: appColors.surface,
+  textPrimary: appColors.textPrimary,
+  textSecondary: appColors.textSecondary,
+  textMuted: appColors.textMuted,
+  brandGreen: appColors.primary,
+  brandGreenDark: appColors.primaryPressed,
+  brandGreenSoft: appColors.primarySoft,
+  brandGreenBorder: appColors.primaryBorder,
+  brandOrange: appColors.orangeAccent,
+  brandOrangeSoft: appColors.warningSoft,
+  border: appColors.border,
+  divider: appColors.divider,
+  chevron: appColors.textSecondary,
 } as const;
 
 export const moreSpacing = {
@@ -27,8 +29,8 @@ export const moreSpacing = {
 
 export const moreCardShadow = {
   shadowColor: "#111827",
-  shadowOffset: { width: 0, height: 5 },
-  shadowOpacity: 0.07,
-  shadowRadius: 12,
-  elevation: 3,
+  shadowOffset: { width: 0, height: 8 },
+  shadowOpacity: 0.04,
+  shadowRadius: 24,
+  elevation: 2,
 } as const;

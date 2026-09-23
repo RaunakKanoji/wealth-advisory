@@ -2,9 +2,13 @@ import {
   clearCustomerPreferences,
   createTransactionCsv,
   getAccount,
+  getAccountPreference,
   getAccountTransactions,
   getAccounts,
+  getBalanceVisibility,
+  subscribeBalanceVisibility,
   updateAccountPreference,
+  updateBalanceVisibility,
   updateTransactionAnnotation,
 } from "./accounts-service";
 
@@ -12,6 +16,7 @@ describe("accounts service", () => {
   beforeEach(async () => {
     await clearCustomerPreferences("demo-customer-a");
     await clearCustomerPreferences("demo-customer-b");
+    await clearCustomerPreferences("usr_demo_a");
   });
 
   it("uses the shared illustrative balances and keeps deposits separate", async () => {
@@ -26,6 +31,55 @@ describe("accounts service", () => {
     expect(accounts.reduce((total, account) => total + account.balanceMinorUnits, 0)).toBe(34_567_800);
     expect(accounts.filter((account) => account.capabilities.canSetPrimary)).toHaveLength(2);
     expect(accounts.find((account) => account.id === "fixed-deposit")?.availableBalanceMinorUnits).toBeUndefined();
+  });
+
+  it("persists one balance visibility preference across the accounts experience", async () => {
+    expect(await getBalanceVisibility({ customerId: "demo-customer-a" })).toBe(true);
+
+    await updateBalanceVisibility("savings-primary", false, { customerId: "demo-customer-a" });
+
+    expect(await getBalanceVisibility({ customerId: "demo-customer-a" })).toBe(false);
+    expect((await getAccountPreference("current-account", { customerId: "demo-customer-a" })).balanceVisible).toBe(false);
+
+    await updateBalanceVisibility("savings-primary", true, { customerId: "demo-customer-a" });
+    expect(await getBalanceVisibility({ customerId: "demo-customer-a" })).toBe(true);
+  });
+
+  it("does not erase hidden balances when other account preferences change", async () => {
+    await updateBalanceVisibility(undefined, false, { customerId: "demo-customer-a" });
+
+    await updateAccountPreference(
+      "current-account",
+      { nickname: "Bills account" },
+      { customerId: "demo-customer-a" },
+    );
+    expect(await getBalanceVisibility({ customerId: "demo-customer-a" })).toBe(false);
+
+    await updateTransactionAnnotation(
+      "savings-primary",
+      "sav-20260810-amazon",
+      { note: "Household purchase" },
+      { customerId: "demo-customer-a" },
+    );
+    expect(await getBalanceVisibility({ customerId: "demo-customer-a" })).toBe(false);
+  });
+
+  it("persists visibility for authenticated API users without requiring a local account fixture", async () => {
+    await updateBalanceVisibility("acc_demo_savings", false, { customerId: "usr_demo_a" });
+
+    expect(await getBalanceVisibility({ customerId: "usr_demo_a" })).toBe(false);
+  });
+
+  it("notifies mounted financial surfaces when balance visibility changes", async () => {
+    const listener = jest.fn();
+    const unsubscribe = subscribeBalanceVisibility(listener, { customerId: "demo-customer-a" });
+
+    await updateBalanceVisibility(undefined, false, { customerId: "demo-customer-a" });
+    expect(listener).toHaveBeenLastCalledWith(false);
+
+    unsubscribe();
+    await updateBalanceVisibility(undefined, true, { customerId: "demo-customer-a" });
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it("calculates summaries across the full matching dataset and excludes pending/failed rows", async () => {

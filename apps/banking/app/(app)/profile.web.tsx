@@ -5,9 +5,12 @@ import React from "react";
 import { Button, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { DemoProfileScreen } from "@/components/demo-profile-screen";
+import { useDemoSession } from "@/lib/demo-session";
 
 export default function WebProfileScreen() {
   const router = useRouter();
+  const { session } = useDemoSession();
   const { returnTo } = useLocalSearchParams<{
     returnTo?: string | string[];
   }>();
@@ -26,6 +29,8 @@ export default function WebProfileScreen() {
       router.replace("/(app)/(tabs)");
     }
   };
+
+  if (session) return <DemoProfileScreen />;
 
   return (
     <ScreenContainer scroll backgroundColor="#FFFFFF">

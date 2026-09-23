@@ -1,5 +1,6 @@
 import type { BankingActivity, WealthInsight } from "../types/banking";
-import { demoTransactions } from "./accounts-demo-data";
+import { DEMO_SCENARIO_DATE, demoTransactions } from "./accounts-demo-data";
+import { demoInsights } from "./wealth-coach-demo-data";
 
 // Home and Accounts intentionally share the same account IDs and source data.
 export { demoAccounts } from "./accounts-demo-data";
@@ -18,10 +19,12 @@ export const demoActivities: BankingActivity[] = demoTransactions
     category: transaction.originalCategory,
   }));
 
+const [demoCoachInsight] = demoInsights;
+
 export const demoInsight: WealthInsight = {
-  id: "insight-shopping",
-  title: "You've spent 12% more on shopping this month.",
-  comparisonLabel: "vs last month",
-  severity: "attention",
-  createdAt: new Date().toISOString(),
+  id: demoCoachInsight.id,
+  title: demoCoachInsight.title,
+  comparisonLabel: demoCoachInsight.summary,
+  severity: demoCoachInsight.severity,
+  createdAt: DEMO_SCENARIO_DATE,
 };

@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "dev": "pnpm --filter @idbi/banking start",
+    "dev": "pnpm --parallel --filter @idbi/api --filter @idbi/banking run dev:demo",
     "dev:banking": "pnpm --filter @idbi/banking start",
     "android": "pnpm --filter @idbi/banking android",
     "ios": "pnpm --filter @idbi/banking ios",
@@ -14,6 +14,24 @@
     "test": "pnpm --filter @idbi/banking test",
     "check": "pnpm lint && pnpm typecheck",
     "doctor": "pnpm --filter @idbi/banking exec expo-doctor@latest",
+    "api:dev": "pnpm --filter @idbi/api dev",
+    "api:typecheck": "pnpm --filter @idbi/api typecheck",
+    "api:test": "pnpm --filter @idbi/api test",
+    "db:generate": "cd apps/api && ./node_modules/.bin/drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "cd apps/api && ./node_modules/.bin/tsx src/db/migrate.ts",
+    "db:migrate:coach": "cd apps/api && node --env-file=.env.coach.local --import tsx src/db/migrate.ts",
+    "db:seed": "cd apps/api && ./node_modules/.bin/tsx src/db/seed.ts",
+    "db:verify": "cd apps/api && ./node_modules/.bin/tsx src/db/verify.ts",
+    "db:check": "cd apps/api && node --env-file=.env.coach.local --import tsx src/db/verify.ts",
+    "demo:reset": "cd apps/api && node --env-file=.env.coach.local --import tsx src/db/seed.ts",
+    "demo:seed": "cd apps/api && node --env-file=.env.coach.local --import tsx src/db/seed.ts",
+    "demo:check": "cd apps/api && node --env-file=.env.coach.local --import tsx scripts/demo-check.ts",
+    "demo:smoke": "cd apps/api && node --env-file=.env.coach.local --import tsx scripts/smoke-demo.ts",
+    "smoke:demo": "cd apps/api && node --env-file=.env.coach.local --import tsx scripts/smoke-demo.ts",
+    "db:setup": "cd apps/api && ./node_modules/.bin/tsx scripts/setup-db.ts",
+    "db:test": "cd apps/api && ./node_modules/.bin/tsx scripts/test-db.ts",
+    "accounts:test": "cd apps/api && ./node_modules/.bin/tsx scripts/test-accounts.ts",
+    "analytics:provision-reader": "cd apps/api && node --env-file=.env.coach.local --import tsx scripts/provision-wealth-analytics-reader.ts",
     "structure": "tree -a -L 6 -I 'node_modules|.git|.expo|dist|build|coverage|.turbo|pnpm-lock.yaml|package-lock.json|yarn.lock'"
   }
 }

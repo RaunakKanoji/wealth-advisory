@@ -3,16 +3,17 @@ import React from "react";
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import type { CardLifecycleStatus, CardRecord } from "@/types/cards";
+import { appColors } from "@/components/theme/tokens";
 
 const colors = {
-  green: "#007E5D",
-  greenDark: "#006647",
-  greenSoft: "#E9F5F2",
-  orange: "#F45B2A",
-  text: "#111827",
-  muted: "#6F7888",
-  background: "#F7F8FA",
-  border: "#E8EBEF",
+  green: appColors.primary,
+  greenDark: appColors.primaryPressed,
+  greenSoft: appColors.primarySoft,
+  orange: appColors.orangeAccent,
+  text: appColors.textPrimary,
+  muted: appColors.textSecondary,
+  background: appColors.background,
+  border: appColors.border,
 };
 
 function productLabel(card: CardRecord): string {

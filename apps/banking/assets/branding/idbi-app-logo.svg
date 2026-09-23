@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" role="img" aria-labelledby="title">
+  <title>IDBI Wealth Advisory app logo</title>
+  <rect width="600" height="600" fill="#007A6C"/>
+  <circle cx="300" cy="300" r="171" fill="#FFFFFF"/>
+
+  <!-- The orange IDBI mark. -->
+  <circle cx="300" cy="300" r="129" fill="#EC6A0C"/>
+  <path d="M249 181c12 10 18 21 17 34-1 13-10 22-20 30-25 18-40 43-43 72-4 31 7 61 24 84-27-18-47-43-54-72-10-39-2-76 19-105 15-20 35-35 57-43Z" fill="#EC6A0C"/>
+  <path d="M351 181c-12 10-18 21-17 34 1 13 10 22 20 30 25 18 40 43 43 72 4 31-7 61-24 84 27-18 47-43 54-72 10-39 2-76-19-105-15-20-35-35-57-43Z" fill="#EC6A0C"/>
+
+  <!-- Negative space that forms the inner curves and the central stem. -->
+  <path d="M278 246c-39 10-66 41-66 80 0 28 8 54 15 74-16-20-25-45-25-74 0-40 27-75 76-87Z" fill="#FFFFFF"/>
+  <path d="M322 246c39 10 66 41 66 80 0 28-8 54-15 74 16-20 25-45 25-74 0-40-27-75-76-87Z" fill="#FFFFFF"/>
+  <rect x="278" y="238" width="44" height="169" rx="22" fill="#FFFFFF"/>
+
+  <!-- White upper gap and orange dot. -->
+  <path d="M300 245c-21 0-35-14-35-31 0-18 14-34 35-34s35 16 35 34c0 17-14 31-35 31Z" fill="#FFFFFF"/>
+  <circle cx="300" cy="193" r="22" fill="#EC6A0C"/>
+</svg>

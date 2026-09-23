@@ -278,6 +278,7 @@ export const demoCardTransactions: CardTransaction[] = [
     category: "shopping",
     channel: "in-store",
     transactionType: "purchase",
+    linkedAccountTransactionId: "sav-20260828-grocery",
     reference: "CARD2026082801",
   }),
   transaction({
@@ -314,6 +315,7 @@ export const demoCardTransactions: CardTransaction[] = [
     category: "shopping",
     channel: "online",
     transactionType: "purchase",
+    linkedAccountTransactionId: "sav-20260810-amazon",
     reference: "CARD2026081001",
     associationKey: "amazon-20260810",
   }),
@@ -351,6 +353,7 @@ export const demoCardTransactions: CardTransaction[] = [
     category: "refund",
     channel: "online",
     transactionType: "refund",
+    linkedAccountTransactionId: "sav-20260814-refund",
     reference: "REF2026081401",
     linkedTransactionId: "card-a-amazon-settled",
   }),

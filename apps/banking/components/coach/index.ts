@@ -1,7 +1,14 @@
 export { AskCoachButton } from "./ask-coach-button";
+export { AskCoachComposer } from "./ask-coach-composer";
 export { CoachPageHeader } from "./coach-page-header";
 export { CoachSkeletons } from "./coach-skeletons";
+export { CoachSectionCard } from "./coach-section-card";
+export { CoachTopicActions } from "./coach-topic-actions";
+export { ConversationRow } from "./conversation-row";
 export { FinancialSnapshotCard } from "./financial-snapshot-card";
 export { GoalProgressCard } from "./goal-progress-card";
+export { GoalDetailScreen } from "./goal-detail-screen";
 export { InsightsSection } from "./insights-section";
+export { GoalsSection } from "./goals-section";
 export { RecommendationsSection } from "./recommendations-section";
+export { RecentConversations } from "./recent-conversations";
